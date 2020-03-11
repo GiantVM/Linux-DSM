@@ -2,6 +2,7 @@
 #define ARCH_X86_KVM_DSM_UTIL_H
 
 #include <linux/kvm_host.h>
+#include <linux/jhash.h>
 
 #define DSM_INITIAL     0
 #define DSM_INVALID     1
