@@ -28,6 +28,7 @@
 #include <linux/slab.h>
 #include <linux/delay.h>
 
+#include <linux/kvm_host.h>
 #include "ktcp.h"
 
 struct ktcp_hdr {
@@ -81,11 +82,11 @@ repeat_send:
 }
 
 int ktcp_send(struct socket *sock, const char *buffer, size_t length,
-		unsigned long flags, extent_t extent)
+		unsigned long flags, const extent_t *extent)
 {
 	struct ktcp_hdr hdr = {
 		.length = length,
-		.extent = extent,
+		.extent = *extent,
 	};
 	int ret;
 	mm_segment_t oldmm;
