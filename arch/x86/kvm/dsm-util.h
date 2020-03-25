@@ -1,6 +1,7 @@
 #ifndef ARCH_X86_KVM_DSM_UTIL_H
 #define ARCH_X86_KVM_DSM_UTIL_H
 
+#include <linux/jhash.h>
 #include <linux/kvm_host.h>
 
 #define DSM_INITIAL     0
