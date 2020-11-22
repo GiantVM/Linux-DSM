@@ -2,9 +2,11 @@
  * Xor Based Zero Run Length Encoding
  *
  * Copyright 2013 Red Hat, Inc. and/or its affiliates
+ * Copyright (C) 2018, Trusted Cloud Group, Shanghai Jiao Tong University.
  *
  * Authors:
  *  Orit Wasserman  <owasserm@redhat.com>
+ *  Jin Zhang 	    <jzhang3002@sjtu.edu.cn>
  *
  * This work is licensed under the terms of the GNU GPL, version 2 or later.
  * See the COPYING file in the top-level directory.

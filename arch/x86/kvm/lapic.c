@@ -6,11 +6,14 @@
  * Copyright (C) 2007 Novell
  * Copyright (C) 2007 Intel
  * Copyright 2009 Red Hat, Inc. and/or its affiliates.
+ * Copyright (C) 2018, Trusted Cloud Group, Shanghai Jiao Tong University.
  *
  * Authors:
  *   Dor Laor <dor.laor@qumranet.com>
  *   Gregory Haskins <ghaskins@novell.com>
  *   Yaozu (Eddie) Dong <eddie.dong@intel.com>
+ *   Yubin Chen 	<binsschen@sjtu.edu.cn>
+ *   Zhuocheng Ding <tcbbd@sjtu.edu.cn>
  *
  * Based on Xen 3.1 code, Copyright (c) 2004, Intel Corporation.
  *

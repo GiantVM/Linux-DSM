@@ -1,6 +1,16 @@
 #ifndef __KVM_X86_MMU_H
 #define __KVM_X86_MMU_H
-
+/*
+ * Copyright (C) 2018, Trusted Cloud Group, Shanghai Jiao Tong University.
+ *
+ * Authors:
+ *  Yubin Chen 		<binsschen@sjtu.edu.cn>
+ *  Zhuocheng Ding  <tcbbd@sjtu.edu.cn>
+ *
+ * This work is licensed under the terms of the GNU GPL, version 2 or later.
+ * See the COPYING file in the top-level directory.
+ *
+ */
 #include <linux/kvm_host.h>
 #include "kvm_cache_regs.h"
 

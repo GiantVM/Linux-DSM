@@ -1,6 +1,15 @@
 #ifndef __KVM_X86_KRDMA_H
 #define __KVM_X86_KRDMA_H
-
+/*
+ * Copyright (C) 2019, Trusted Cloud Group, Shanghai Jiao Tong University.
+ *
+ * Authors:
+ *   Yubin Chen <binsschen@sjtu.edu.cn>
+ *   Jin Zhang <jzhang3002@sjtu.edu.cn>
+ *
+ * This work is licensed under the terms of the GNU GPL, version 2.  See
+ * the COPYING file in the top-level directory.
+ */
 #include <linux/pci.h>
 #include <linux/list.h>
 

@@ -5,6 +5,12 @@
  * Userspace interface for /dev/kvm - kernel based virtual machine
  *
  * Note: you must update KVM_API_VERSION if you change this interface.
+ * 
+ * Copyright (C) 2018, Trusted Cloud Group, Shanghai Jiao Tong University.
+ * Authors:
+ *   Jin Zhang 	    <jzhang3002@sjtu.edu.cn>
+ *   Yubin Chen 	<binsschen@sjtu.edu.cn>
+ *   Zhuocheng Ding <tcbbd@sjtu.edu.cn>
  */
 
 #include <linux/types.h>

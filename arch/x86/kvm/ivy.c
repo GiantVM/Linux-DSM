@@ -4,10 +4,10 @@
  * This feature allows us to run multiple KVM instances on different machines
  * sharing the same address space.
  *
+ * Copyright (C) 2019, Trusted Cloud Group, Shanghai Jiao Tong University.
+ * 
  * Authors:
- *   Chen Yubin <i@binss.me>
- *   Ding Zhuocheng <tcbbdddd@gmail.com>
- *   Zhang Jin <437629012@qq.com>
+ *   Jin Zhang <jzhang3002@sjtu.edu.cn>
  *
  * This work is licensed under the terms of the GNU GPL, version 2.  See
  * the COPYING file in the top-level directory.

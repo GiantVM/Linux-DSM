@@ -1,3 +1,12 @@
+# Copyright (C) 2019, Trusted Cloud Group, Shanghai Jiao Tong University.
+# 
+# Authors:
+#   Jin Zhang 	    <jzhang3002@sjtu.edu.cn>
+#   Yubin Chen 	 	<binsschen@sjtu.edu.cn>
+#   Zhuocheng Ding  <tcbbd@sjtu.edu.cn>
+# 
+#  This work is licensed under the terms of the GNU GPL, version 2.  See
+#  the COPYING file in the top-level directory.
 
 ccflags-y += -Iarch/x86/kvm
 
