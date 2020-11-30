@@ -19,10 +19,11 @@
 // How many requests can be buffered in the listening queue
 #define DEFAULT_BACKLOG 16
 
-typedef uint32_t extent_t;
+struct tx_add;
+typedef struct tx_add extent_t;
 
 int ktcp_send(struct socket *sock, const char *buffer, size_t length,
-		unsigned long flags, extent_t extent);
+		unsigned long flags, const extent_t *extent);
 
 int ktcp_receive(struct socket *sock, char *buffer, unsigned long flags,
 		extent_t *extent);
