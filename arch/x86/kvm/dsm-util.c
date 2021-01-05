@@ -22,7 +22,6 @@
 
 #include <linux/kthread.h>
 #include <linux/mmu_context.h>
-#include <linux/jhash.h>
 
 struct kvm_network_ops network_ops;
 

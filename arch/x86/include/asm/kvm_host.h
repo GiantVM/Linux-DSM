@@ -670,8 +670,8 @@ struct kvm_lpage_info {
 #define KVM_DSM_DEBUG
 
 /* TODO: Make TCP interfaces compatible. */
-//#define USE_KTCP_NETWORK
-#define USE_KRDMA_NETWORK
+#define USE_KTCP_NETWORK
+// #define USE_KRDMA_NETWORK
 
 #define IVY_KVM_DSM
 //#define TARDIS_KVM_DSM
@@ -682,7 +682,7 @@ extern bool kvm_dsm_dbg_verbose;
 
 #ifdef USE_KTCP_NETWORK
 	#include "ktcp.h"
-	typedef struct socket kconnection_t;
+	typedef struct ktcp_cb kconnection_t;
 #endif
 
 #ifdef USE_KRDMA_NETWORK

@@ -10,6 +10,7 @@
  * the COPYING file in the top-level directory.
  */
 #include <linux/kvm_host.h>
+#include <linux/jhash.h>
 
 #define DSM_INITIAL     0
 #define DSM_INVALID     1
