@@ -683,29 +683,40 @@ void kvm_dsm_free(struct kvm *kvm)
 }
 
 static int kvm_dsm_page_fault(struct kvm *kvm, struct kvm_memory_slot *memslot,
-		gfn_t gfn, bool is_smm, int write)
+    gfn_t gfn, bool is_smm, int write)
 {
-	int ret;
+  int ret;
 #ifdef KVM_DSM_PF_PROFILE
-	struct timespec ts;
-	ulong start;
+  struct timespec ts_start, ts_end;
+  ulong start;
+  bool net = false;
+  static unsigned long long count = 0;
 
-	getnstimeofday(&ts);
-	start = ts.tv_sec * 1000 * 1000 + ts.tv_nsec / 1000;
+  getnstimeofday(&ts_start);
+  start = ts_start.tv_sec * 1000 * 1000 + ts_start.tv_nsec / 1000;
 #endif
 
 #ifdef IVY_KVM_DSM
-	ret = ivy_kvm_dsm_page_fault(kvm, memslot, gfn, is_smm, write);
+  ret = ivy_kvm_dsm_page_fault(kvm, memslot, gfn, is_smm, write, &net);
 #elif defined(TARDIS_KVM_DSM)
-	ret = tardis_kvm_dsm_page_fault(kvm, memslot, gfn, is_smm, write);
+  ret = tardis_kvm_dsm_page_fault(kvm, memslot, gfn, is_smm, write);
 #endif
 
 #ifdef KVM_DSM_PF_PROFILE
-	getnstimeofday(&ts);
-	kvm->stat.total_tx_latency += ts.tv_sec * 1000 * 1000 + ts.tv_nsec / 1000
-		- start;
+  getnstimeofday(&ts_end);
+  kvm->stat.total_tx_latency += ts_end.tv_sec * 1000 * 1000 + ts_end.tv_nsec / 1000
+    - start;
 #endif
-	return ret;
+	if (unlikely(!count)) {
+		
+	}
+
+  if (net && (++count % 100 == 0)) {
+    printk(KERN_ERR "kvm-dsm: node-%d transaction took %ld ns.\n",
+    kvm->arch.dsm_id, (ts_end.tv_sec - ts_start.tv_sec) * NSEC_PER_SEC +
+    ts_end.tv_nsec - ts_start.tv_nsec);
+  }
+  return ret;
 }
 
 int kvm_dsm_memcpy(struct kvm *kvm, unsigned long host_virt_addr,

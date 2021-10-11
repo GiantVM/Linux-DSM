@@ -90,7 +90,7 @@ repeat_send:
 
 	ret = written != 0 ? written : len;
 	if (ret > 0 && ret != length) {
-		printk(KERN_WARNING "ktcp_send send %d bytes which expected_size=%lu bytes", ret, length);
+		// printk(KERN_WARNING "ktcp_send send %d bytes which expected_size=%lu bytes", ret, length);
 	}
 
 	if (ret < 0) {
