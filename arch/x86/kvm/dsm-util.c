@@ -288,14 +288,18 @@ int kvm_dsm_connect(struct kvm *kvm, int dest_id, kconnection_t **conn_sock)
 		memset(buf, 111, sizeof(buf));
 		printk(KERN_ERR "kvm-dsm-eval: Node 0 sending ...\n");
 
-		for (j = 0; j < 10; ++j) {
-			for (i = 1; i <= SIZE_SHIFT; ++i) {
+		for (j = 0; j < 1; ++j) {
+			for (i = 6; i <= SIZE_SHIFT; ++i) {
 				getnstimeofday(&ts_start);
 
-				for (k = 0; k < 1000; ++k) {
-					network_ops.send(*conn_sock, (const char *) buf, size << i, 0, &tx_add);
+				for (k = 0; k < EVAL_ITER; ++k) {
+					length = network_ops.send(*conn_sock, (const char *) buf, size << i, 0, &tx_add);
+					if (unlikely(length != (size << i))) {
+						printk(KERN_ERR "kvm-dsm-eval: size mismatch. \n");
+					}
+					
 					length = network_ops.receive(*conn_sock, (char *) buf, 0, &tx_add);
-					if (length != size << i) {
+					if (unlikely(length != (size << i))) {
 						printk(KERN_ERR "kvm-dsm-eval: size mismatch. \n");
 					}
 				}
@@ -303,9 +307,9 @@ int kvm_dsm_connect(struct kvm *kvm, int dest_id, kconnection_t **conn_sock)
 				getnstimeofday(&ts_end);
 				time = timespec_diff_ns(&ts_end, &ts_start);
 
-				printk(KERN_ERR "kvm-dsm-eval: size %llu, took %llu ns, bandwith %llu MiB/s.\n",
-					size << i, time / 2000, (2000 * NSEC_PER_SEC * size / time) / 1024 / 1024);
-				msleep_interruptible(200);
+				printk(KERN_ERR "kvm-dsm-eval: size %llu, took %llu ns\n",
+					size << i, time);
+				msleep(200);
 			}
 		}
 	}

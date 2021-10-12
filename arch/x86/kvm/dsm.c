@@ -470,15 +470,20 @@ static int kvm_dsm_threadfn(void *data)
 			tx_add_t tx_add = {
 				.txid = generate_txid(kvm, 0),
 			};
+
 			printk(KERN_ERR "kvm-dsm-eval: Node 1 recving ...\n");
-			for (j = 0; j < 10; ++j) {
-				for (k = 1; k <= SIZE_SHIFT; ++k) {
-					for (m = 0; m < 1000; ++m) {
+			for (j = 0; j < 1; ++j) {
+				for (k = 6; k <= SIZE_SHIFT; ++k) {
+					for (m = 0; m < EVAL_ITER; ++m) {
 						length = network_ops.receive(accept_sock, (char *) buf, 0, &tx_add);
-						if (length != size << k) {
+						if (unlikely(length != (size << k))) {
 							printk(KERN_ERR "kvm-dsm-eval: size mismatch. \n");
 						}
-						network_ops.send(accept_sock, (const char *) buf, size << k, 0, &tx_add);
+
+						length = network_ops.send(accept_sock, (const char *) buf, size << k, 0, &tx_add);
+						if (unlikely(length != (size << k))) {
+							printk(KERN_ERR "kvm-dsm-eval: size mismatch. \n");
+						}
 					}
 				}
 			}
