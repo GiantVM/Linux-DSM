@@ -432,7 +432,7 @@ static int kvm_dsm_threadfn(void *data)
 	struct task_struct *thread;
 	int i, count;
 	char comm[TASK_COMM_LEN];
-	unsigned long long size = 1, k, j, length;
+	unsigned long long size = 1, k, j, length, m;
 
 	struct kvm *kvm = (struct kvm *)data;
 
@@ -473,11 +473,13 @@ static int kvm_dsm_threadfn(void *data)
 			printk(KERN_ERR "kvm-dsm-eval: Node 1 recving ...\n");
 			for (j = 0; j < 10; ++j) {
 				for (k = 1; k <= SIZE_SHIFT; ++k) {
-					length = network_ops.receive(accept_sock, (char *) buf, 0, &tx_add);
-					if (length != size << k) {
-						printk(KERN_ERR "kvm-dsm-eval: size mismatch. \n");
+					for (m = 0; m < 1000; ++m) {
+						length = network_ops.receive(accept_sock, (char *) buf, 0, &tx_add);
+						if (length != size << k) {
+							printk(KERN_ERR "kvm-dsm-eval: size mismatch. \n");
+						}
+						network_ops.send(accept_sock, (const char *) buf, size << k, 0, &tx_add);
 					}
-					network_ops.send(accept_sock, (const char *) buf, size << k, 0, &tx_add);
 				}
 			}
 		}
