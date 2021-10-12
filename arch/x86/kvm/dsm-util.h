@@ -288,6 +288,13 @@ static inline version_t dsm_get_twin_version(struct kvm_dsm_memory_slot *slot,
 #endif
 }
 
+#define SIZE_SHIFT 22
+
+static inline long timespec_diff_ns(struct timespec *t1, struct timespec *t2) {
+	return (t1->tv_sec - t2->tv_sec) * NSEC_PER_SEC +
+    t1->tv_nsec - t2->tv_nsec;
+}
+
 static inline void dsm_incr_version(struct kvm_dsm_memory_slot *slot, hfn_t vfn)
 {
 	/* dsm_lock should be held. */

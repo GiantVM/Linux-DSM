@@ -418,6 +418,8 @@ static int kvm_dsm_handle_req(void *data)
  * Invariant: Inv request should not be blocked. The multiple server threads
  * help.
  */
+
+static char buf[1 << SIZE_SHIFT];
 static int kvm_dsm_threadfn(void *data)
 {
 	int ret;
@@ -430,6 +432,7 @@ static int kvm_dsm_threadfn(void *data)
 	struct task_struct *thread;
 	int i, count;
 	char comm[TASK_COMM_LEN];
+	unsigned long long size = 1, k, j, length;
 
 	struct kvm *kvm = (struct kvm *)data;
 
@@ -461,6 +464,22 @@ static int kvm_dsm_threadfn(void *data)
 			if (ret == -ERESTARTSYS)
 				ret = 0;
 			goto out_listen_sock;
+		}
+
+		if (kvm->arch.dsm_id == 1) {
+			tx_add_t tx_add = {
+				.txid = generate_txid(kvm, 0),
+			};
+			printk(KERN_ERR "kvm-dsm-eval: Node 1 recving ...\n");
+			for (j = 0; j < 10; ++j) {
+				for (k = 1; k <= SIZE_SHIFT; ++k) {
+					length = network_ops.receive(accept_sock, (char *) buf, 0, &tx_add);
+					if (length != size << k) {
+						printk(KERN_ERR "kvm-dsm-eval: size mismatch. \n");
+					}
+					network_ops.send(accept_sock, (const char *) buf, size << k, 0, &tx_add);
+				}
+			}
 		}
 
 		conn = kmalloc(sizeof(struct dsm_conn), GFP_KERNEL);
@@ -707,14 +726,10 @@ static int kvm_dsm_page_fault(struct kvm *kvm, struct kvm_memory_slot *memslot,
   kvm->stat.total_tx_latency += ts_end.tv_sec * 1000 * 1000 + ts_end.tv_nsec / 1000
     - start;
 #endif
-	if (unlikely(!count)) {
-		
-	}
 
-  if (net && (++count % 100 == 0)) {
+  if (unlikely(net && (++count % 100 == 0))) {
     printk(KERN_ERR "kvm-dsm: node-%d transaction took %ld ns.\n",
-    kvm->arch.dsm_id, (ts_end.tv_sec - ts_start.tv_sec) * NSEC_PER_SEC +
-    ts_end.tv_nsec - ts_start.tv_nsec);
+			kvm->arch.dsm_id, timespec_diff_ns(&ts_end, &ts_start));
   }
   return ret;
 }

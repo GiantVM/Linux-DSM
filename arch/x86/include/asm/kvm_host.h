@@ -704,7 +704,7 @@ typedef uint32_t version_t;
 typedef uint32_t timestamp_t;
 
 #define KVM_DSM_W_SHARED
-#define KVM_DSM_DIFF
+// #define KVM_DSM_DIFF
 #define KVM_DSM_PF_PROFILE
 
 #define DSM_MAX_INSTANCES 16

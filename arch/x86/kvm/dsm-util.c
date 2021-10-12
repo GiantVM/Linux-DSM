@@ -256,10 +256,18 @@ void dsm_set_twin_conditionally(struct kvm_dsm_memory_slot *slot,
 #endif
 }
 
+static char buf[1 << SIZE_SHIFT];
+
 int kvm_dsm_connect(struct kvm *kvm, int dest_id, kconnection_t **conn_sock)
 {
 	int ret;
 	struct dsm_address addr;
+
+	tx_add_t tx_add = {
+		.txid = generate_txid(kvm, dest_id),
+	};
+	struct timespec ts_start, ts_end;
+	unsigned long long size = 1, i, j, time, length;
 
 	ret = get_dsm_address(kvm, dest_id, &addr);
 	if (ret < 0) {
@@ -275,6 +283,30 @@ int kvm_dsm_connect(struct kvm *kvm, int dest_id, kconnection_t **conn_sock)
 	}
 	printk(KERN_INFO "kvm-dsm: node-%d established connection with node-%d [%s:%s]\n",
 			kvm->arch.dsm_id, dest_id, addr.host, addr.port);
+
+	if (kvm->arch.dsm_id == 0) {
+		memset(buf, 111, sizeof(buf));
+		printk(KERN_ERR "kvm-dsm-eval: Node 0 sending ...\n");
+
+		for (j = 0; j < 10; ++j) {
+			for (i = 1; i <= SIZE_SHIFT; ++i) {
+				getnstimeofday(&ts_start);
+
+				network_ops.send(*conn_sock, (const char *) buf, size << i, 0, &tx_add);
+				length = network_ops.receive(*conn_sock, (char *) buf, 0, &tx_add);
+				if (length != size << i) {
+					printk(KERN_ERR "kvm-dsm-eval: size mismatch. \n");
+				}
+
+				getnstimeofday(&ts_end);
+				time = timespec_diff_ns(&ts_end, &ts_start);
+
+				printk(KERN_ERR "kvm-dsm-eval: size %llu, took %llu ns, bandwith %llu MiB/s.\n",
+					size << i, time / 2, (2 * NSEC_PER_SEC * size / time) >> 20);
+				msleep_interruptible(200);
+			}
+		}
+	}
 	return 0;
 }
 
