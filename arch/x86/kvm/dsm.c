@@ -758,7 +758,8 @@ static int kvm_dsm_page_fault(struct kvm *kvm, struct kvm_memory_slot *memslot,
 
   if (unlikely(type != DSM_PF_TYPES
 								&& type != DSM_PF_ERR
-							  && (count % 100 == 0))) {
+							  && (count % 100 == 0)
+								&& kvm->arch.dsm_id == 0)) {
     // printk(KERN_ERR "kvm-dsm: node-%d transaction %s took %ld ns.\n",
 		// 	kvm->arch.dsm_id, type_desc[type], timespec_diff_ns(&ts_end, &ts_start));
 		array = type_record[type];
@@ -768,14 +769,14 @@ static int kvm_dsm_page_fault(struct kvm *kvm, struct kvm_memory_slot *memslot,
 		if (unlikely(type_record_idx[type] == NRECORD)) {
 			sum = 0;
 			for (j = 0; j < 10; ++j) {
-				printk(KERN_ERR "kvm-dsm-eval: %s # %d\n", type_desc[type], j);
+				printk(KERN_ERR "kvm-dsm-eval: %17s # %d: ", type_desc[type], j);
 				for (i = j * NRECORD / 10; i < (j + 1) * NRECORD / 10; ++i) {
 					printk(KERN_CONT "%ld ", array[i]);
 					sum += array[i];
 				}
 			}
-			sum = sum / NRECORD / 1000;
-			printk(KERN_ERR "kvm-dsm-eval: %s AVG: %llu us\n", type_desc[type], sum);
+			sum = sum / NRECORD;
+			printk(KERN_ERR "kvm-dsm-eval: %17s AVG: %llu ns\n", type_desc[type], sum);
 			type_record_idx[type] = 0;
 		}
   }
