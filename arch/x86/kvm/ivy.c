@@ -649,7 +649,7 @@ static bool is_fast_path(struct kvm *kvm, struct kvm_dsm_memory_slot *slot,
  * 2. Upon a read fault, the version of requester is the same as resp.version
  */
 int ivy_kvm_dsm_page_fault(struct kvm *kvm, struct kvm_memory_slot *memslot,
-		gfn_t gfn, bool is_smm, int write, bool *net)
+		gfn_t gfn, bool is_smm, int write, int *type)
 {
 	int ret, resp_len = 0;
 	struct kvm_dsm_memory_slot *slot;
@@ -663,6 +663,7 @@ int ivy_kvm_dsm_page_fault(struct kvm *kvm, struct kvm_memory_slot *memslot,
 	slot = gfn_to_hvaslot(kvm, memslot, gfn);
 
 	if (is_fast_path(kvm, slot, vfn, write)) {
+		*type = DSM_PF_FAST;
 		if (write) {
 			return ACC_ALL;
 		}
@@ -676,6 +677,7 @@ int ivy_kvm_dsm_page_fault(struct kvm *kvm, struct kvm_memory_slot *memslot,
 	page = kmalloc(PAGE_SIZE, GFP_KERNEL);
 	if (page == NULL) {
 		ret = -ENOMEM;
+		*type = DSM_PF_ERR;
 		goto out_error;
 	}
 
@@ -697,12 +699,15 @@ int ivy_kvm_dsm_page_fault(struct kvm *kvm, struct kvm_memory_slot *memslot,
 			BUG_ON(dsm_get_prob_owner(slot, vfn) != kvm->arch.dsm_id);
 
 			ret = kvm_dsm_invalidate(kvm, gfn, is_smm, slot, vfn, NULL, kvm->arch.dsm_id);
-			if (ret < 0)
+			if (ret < 0) {
+				*type = DSM_PF_ERR;
 				goto out_error;
+			}
 			resp.version = dsm_get_version(slot, vfn);
 			resp_len = PAGE_SIZE;
 
 			dsm_incr_version(slot, vfn);
+			*type = DSM_PF_WRITE_LOC;
 		}
 		else {
 			owner = dsm_get_prob_owner(slot, vfn);
@@ -712,6 +717,7 @@ int ivy_kvm_dsm_page_fault(struct kvm *kvm, struct kvm_memory_slot *memslot,
 				dsm_change_state(slot, vfn, DSM_OWNER | DSM_MODIFIED);
 				dsm_add_to_copyset(slot, vfn, kvm->arch.dsm_id);
 				ret = ACC_ALL;
+				*type = DSM_PF_WRITE_INIT;
 				goto out;
 			}
 			/*
@@ -729,7 +735,7 @@ int ivy_kvm_dsm_page_fault(struct kvm *kvm, struct kvm_memory_slot *memslot,
 				goto out_error;
 
 			dsm_set_version(slot, vfn, resp.version + 1);
-			*net = true;
+			*type = DSM_PF_WRITE_NET;
 		}
 
 		dsm_clear_copyset(slot, vfn);
@@ -742,6 +748,7 @@ int ivy_kvm_dsm_page_fault(struct kvm *kvm, struct kvm_memory_slot *memslot,
 		if (!dsm_is_owner(slot, vfn) && resp_len > 0) {
 			ret = __kvm_write_guest_page(memslot, gfn, page, 0, PAGE_SIZE);
 			if (ret < 0) {
+				*type = DSM_PF_ERR;
 				goto out_error;
 			}
 		}
@@ -771,12 +778,15 @@ int ivy_kvm_dsm_page_fault(struct kvm *kvm, struct kvm_memory_slot *memslot,
 			dsm_change_state(slot, vfn, DSM_OWNER | DSM_SHARED);
 			dsm_add_to_copyset(slot, vfn, kvm->arch.dsm_id);
 			ret = ACC_EXEC_MASK | ACC_USER_MASK;
+			*type = DSM_PF_READ_INIT;
 			goto out;
 		}
 		/* Ask the probOwner */
 		ret = resp_len = kvm_dsm_fetch(kvm, owner, false, &req, page, &resp);
-		if (ret < 0)
+		if (ret < 0) {
+			*type = DSM_PF_ERR;
 			goto out_error;
+		}
 
 		dsm_set_version(slot, vfn, resp.version);
 		memcpy(dsm_get_copyset(slot, vfn), &resp.inv_copyset, sizeof(copyset_t));
@@ -785,8 +795,10 @@ int ivy_kvm_dsm_page_fault(struct kvm *kvm, struct kvm_memory_slot *memslot,
 		dsm_decode_diff(page, resp_len, memslot, gfn);
 
 		ret = __kvm_write_guest_page(memslot, gfn, page, 0, PAGE_SIZE);
-		if (ret < 0)
+		if (ret < 0) {
+			*type = DSM_PF_ERR;
 			goto out_error;
+		}
 
 		dsm_set_prob_owner(slot, vfn, kvm->arch.dsm_id);
 		/*
@@ -796,7 +808,7 @@ int ivy_kvm_dsm_page_fault(struct kvm *kvm, struct kvm_memory_slot *memslot,
 		 */
 		dsm_change_state(slot, vfn, DSM_OWNER | DSM_SHARED);
 		ret = ACC_EXEC_MASK | ACC_USER_MASK;
-		*net = true;
+		*type = DSM_PF_READ_NET;
 	}
 
 out:

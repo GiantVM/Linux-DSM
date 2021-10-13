@@ -263,11 +263,11 @@ int kvm_dsm_connect(struct kvm *kvm, int dest_id, kconnection_t **conn_sock)
 	int ret;
 	struct dsm_address addr;
 
-	tx_add_t tx_add = {
-		.txid = generate_txid(kvm, dest_id),
-	};
-	struct timespec ts_start, ts_end;
-	unsigned long long size = 1, i, j, time, length, k;
+	// tx_add_t tx_add = {
+	// 	.txid = generate_txid(kvm, dest_id),
+	// };
+	// struct timespec ts_start, ts_end;
+	// unsigned long long size = 1, i, j, time, length, k;
 
 	ret = get_dsm_address(kvm, dest_id, &addr);
 	if (ret < 0) {
@@ -283,7 +283,7 @@ int kvm_dsm_connect(struct kvm *kvm, int dest_id, kconnection_t **conn_sock)
 	}
 	printk(KERN_INFO "kvm-dsm: node-%d established connection with node-%d [%s:%s]\n",
 			kvm->arch.dsm_id, dest_id, addr.host, addr.port);
-
+/*
 	if (kvm->arch.dsm_id == 0) {
 		memset(buf, 111, sizeof(buf));
 		printk(KERN_ERR "kvm-dsm-eval: Node 0 sending ...\n");
@@ -312,7 +312,7 @@ int kvm_dsm_connect(struct kvm *kvm, int dest_id, kconnection_t **conn_sock)
 				msleep(200);
 			}
 		}
-	}
+	} */
 	return 0;
 }
 

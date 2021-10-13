@@ -419,7 +419,7 @@ static int kvm_dsm_handle_req(void *data)
  * help.
  */
 
-static char buf[1 << SIZE_SHIFT];
+// static char buf[1 << SIZE_SHIFT];
 static int kvm_dsm_threadfn(void *data)
 {
 	int ret;
@@ -432,7 +432,7 @@ static int kvm_dsm_threadfn(void *data)
 	struct task_struct *thread;
 	int i, count;
 	char comm[TASK_COMM_LEN];
-	unsigned long long size = 1, k, j, length, m;
+	// unsigned long long size = 1, k, j, length, m;
 
 	struct kvm *kvm = (struct kvm *)data;
 
@@ -465,7 +465,7 @@ static int kvm_dsm_threadfn(void *data)
 				ret = 0;
 			goto out_listen_sock;
 		}
-
+/*
 		if (kvm->arch.dsm_id == 1) {
 			tx_add_t tx_add = {
 				.txid = generate_txid(kvm, 0),
@@ -488,7 +488,7 @@ static int kvm_dsm_threadfn(void *data)
 				}
 			}
 		}
-
+*/
 		conn = kmalloc(sizeof(struct dsm_conn), GFP_KERNEL);
 		if (conn == NULL) {
 			ret = -ENOMEM;
@@ -708,6 +708,16 @@ void kvm_dsm_free(struct kvm *kvm)
 	kvfree(slots);
 }
 
+static char *type_desc[DSM_PF_TYPES] = {
+	"DSM_PF_FAST",
+	"DSM_PF_WRITE_INIT",
+	"DSM_PF_WRITE_LOC",
+	"DSM_PF_WRITE_NET",
+	"DSM_PF_READ_INIT",
+	"DSM_PF_READ_NET",
+	"DSM_PF_ERR"
+};
+
 static int kvm_dsm_page_fault(struct kvm *kvm, struct kvm_memory_slot *memslot,
     gfn_t gfn, bool is_smm, int write)
 {
@@ -715,7 +725,7 @@ static int kvm_dsm_page_fault(struct kvm *kvm, struct kvm_memory_slot *memslot,
 #ifdef KVM_DSM_PF_PROFILE
   struct timespec ts_start, ts_end;
   ulong start;
-  bool net = false;
+  int type = DSM_PF_TYPES;
   static unsigned long long count = 0;
 
   getnstimeofday(&ts_start);
@@ -723,7 +733,7 @@ static int kvm_dsm_page_fault(struct kvm *kvm, struct kvm_memory_slot *memslot,
 #endif
 
 #ifdef IVY_KVM_DSM
-  ret = ivy_kvm_dsm_page_fault(kvm, memslot, gfn, is_smm, write, &net);
+  ret = ivy_kvm_dsm_page_fault(kvm, memslot, gfn, is_smm, write, &type);
 #elif defined(TARDIS_KVM_DSM)
   ret = tardis_kvm_dsm_page_fault(kvm, memslot, gfn, is_smm, write);
 #endif
@@ -734,9 +744,9 @@ static int kvm_dsm_page_fault(struct kvm *kvm, struct kvm_memory_slot *memslot,
     - start;
 #endif
 
-  if (unlikely(net && (++count % 100 == 0))) {
-    printk(KERN_ERR "kvm-dsm: node-%d transaction took %ld ns.\n",
-			kvm->arch.dsm_id, timespec_diff_ns(&ts_end, &ts_start));
+  if (unlikely((type != DSM_PF_TYPES) && (++count % 100 == 0))) {
+    printk(KERN_ERR "kvm-dsm: node-%d transaction %s took %ld ns.\n",
+			kvm->arch.dsm_id, type_desc[type], timespec_diff_ns(&ts_end, &ts_start));
   }
   return ret;
 }
