@@ -256,7 +256,7 @@ void dsm_set_twin_conditionally(struct kvm_dsm_memory_slot *slot,
 #endif
 }
 
-static char buf[1 << SIZE_SHIFT];
+// static char buf[1 << SIZE_SHIFT];
 
 int kvm_dsm_connect(struct kvm *kvm, int dest_id, kconnection_t **conn_sock)
 {
