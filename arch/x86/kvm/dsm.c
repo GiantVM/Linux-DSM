@@ -719,20 +719,21 @@ static char *type_desc[DSM_PF_TYPES] = {
 };
 
 #define NRECORD 1000
-static unsigned long long type_record[DSM_PF_TYPES][NRECORD];
+static long type_record[DSM_PF_TYPES][NRECORD];
 static int type_record_idx[DSM_PF_TYPES];
 
 static int kvm_dsm_page_fault(struct kvm *kvm, struct kvm_memory_slot *memslot,
     gfn_t gfn, bool is_smm, int write)
 {
-  int ret, i;
+  int ret, i, j;
 #ifdef KVM_DSM_PF_PROFILE
   struct timespec ts_start, ts_end;
   ulong start;
   int type = DSM_PF_TYPES;
   static unsigned long long count = 0, sum;
+	long *array;
 
-	if (unlikely(count % 100 == 0))
+	// if (unlikely(count % 100 == 0))
   	getnstimeofday(&ts_start);
   start = ts_start.tv_sec * 1000 * 1000 + ts_start.tv_nsec / 1000;
 #endif
@@ -744,11 +745,12 @@ static int kvm_dsm_page_fault(struct kvm *kvm, struct kvm_memory_slot *memslot,
 #endif
 
 #ifdef KVM_DSM_PF_PROFILE
-	if (unlikely(count % 100 == 0))
+	// if (unlikely(count % 100 == 0))
   	getnstimeofday(&ts_end);
   kvm->stat.total_tx_latency += ts_end.tv_sec * 1000 * 1000 + ts_end.tv_nsec / 1000
     - start;
 #endif
+
 	if (unlikely(!count)) {
 		memset(type_record_idx, 0, sizeof(type_record_idx));
 		memset(type_record, 0, sizeof(type_record));
@@ -759,16 +761,20 @@ static int kvm_dsm_page_fault(struct kvm *kvm, struct kvm_memory_slot *memslot,
 							  && (count % 100 == 0))) {
     // printk(KERN_ERR "kvm-dsm: node-%d transaction %s took %ld ns.\n",
 		// 	kvm->arch.dsm_id, type_desc[type], timespec_diff_ns(&ts_end, &ts_start));
-		type_record[type][type_record_idx[type]] = timespec_diff_ns(&ts_end, &ts_start);
+		array = &type_record[type]
+		array[type_record_idx[type]] = timespec_diff_ns(&ts_end, &ts_start);
 		++type_record_idx[type];
+
 		if (unlikely(type_record_idx[type] == NRECORD)) {
-			printk(KERN_ERR "kvm-dsm-eval: %s ", type_desc[type]);
 			sum = 0;
-			for (i = 0; i < NRECORD; ++i) {
-				printk(KERN_CONT "%llu ", type_record[type][i]);
-				sum += type_record[type][i];
+			for (j = 0; j < 10; ++j) {
+				printk(KERN_ERR "kvm-dsm-eval: %s # %d\n", type_desc[type], j);
+				for (i = j * NRECORD / 10; i < (j + 1) * NRECORD / 10; ++i) {
+					printk(KERN_CONT "%ld ", array[i]);
+					sum += array[i];
+				}
 			}
-			sum /= NRECORD * 1000;
+			sum = sum / NRECORD / 1000;
 			printk(KERN_ERR "kvm-dsm-eval: %s AVG: %llu us\n", type_desc[type], sum);
 			type_record_idx[type] = 0;
 		}
