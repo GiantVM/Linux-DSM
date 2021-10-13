@@ -761,7 +761,7 @@ static int kvm_dsm_page_fault(struct kvm *kvm, struct kvm_memory_slot *memslot,
 							  && (count % 100 == 0))) {
     // printk(KERN_ERR "kvm-dsm: node-%d transaction %s took %ld ns.\n",
 		// 	kvm->arch.dsm_id, type_desc[type], timespec_diff_ns(&ts_end, &ts_start));
-		array = &type_record[type]
+		array = type_record[type];
 		array[type_record_idx[type]] = timespec_diff_ns(&ts_end, &ts_start);
 		++type_record_idx[type];
 
