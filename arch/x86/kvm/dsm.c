@@ -733,7 +733,7 @@ static int kvm_dsm_page_fault(struct kvm *kvm, struct kvm_memory_slot *memslot,
   static unsigned long long count = 0, sum;
 	long *array;
 
-	// if (unlikely(count % 100 == 0))
+	if (unlikely(count % 100 == 0))
   	getnstimeofday(&ts_start);
   start = ts_start.tv_sec * 1000 * 1000 + ts_start.tv_nsec / 1000;
 #endif
@@ -745,7 +745,7 @@ static int kvm_dsm_page_fault(struct kvm *kvm, struct kvm_memory_slot *memslot,
 #endif
 
 #ifdef KVM_DSM_PF_PROFILE
-	// if (unlikely(count % 100 == 0))
+	if (unlikely(count % 100 == 0))
   	getnstimeofday(&ts_end);
   kvm->stat.total_tx_latency += ts_end.tv_sec * 1000 * 1000 + ts_end.tv_nsec / 1000
     - start;
@@ -757,6 +757,7 @@ static int kvm_dsm_page_fault(struct kvm *kvm, struct kvm_memory_slot *memslot,
 	}
 
   if (unlikely(type != DSM_PF_TYPES
+								&& type != DSM_PF_FAST
 								&& type != DSM_PF_ERR
 							  && (count % 100 == 0)
 								&& kvm->arch.dsm_id == 0)) {
