@@ -793,7 +793,8 @@ static int kvm_dsm_page_fault(struct kvm *kvm, struct kvm_memory_slot *memslot,
 							  && (count % 100 == 0)
 								&& kvm->arch.dsm_id == 0)) {
 		++type_record_count[type];
-		if (unlikely(count % 10000 == 0)) {
+		if (unlikely(count % 300000 == 0)) {
+			printk(KERN_ERR "Dumping.......................");
 			for (i = 0; i < DSM_PF_TYPES; ++i) {
 				printk(KERN_ERR "%17s: %llu", type_desc[i], type_record_count[i]);
 			}
