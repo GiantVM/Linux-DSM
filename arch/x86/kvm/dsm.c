@@ -721,6 +721,7 @@ static char *type_desc[DSM_PF_TYPES] = {
 #define NRECORD 1000
 static long type_record[DSM_PF_TYPES][NRECORD];
 static int type_record_idx[DSM_PF_TYPES];
+static unsigned long long type_record_count[DSM_PF_TYPES];
 
 static int kvm_dsm_page_fault(struct kvm *kvm, struct kvm_memory_slot *memslot,
     gfn_t gfn, bool is_smm, int write)
@@ -755,7 +756,7 @@ static int kvm_dsm_page_fault(struct kvm *kvm, struct kvm_memory_slot *memslot,
 		memset(type_record_idx, 0, sizeof(type_record_idx));
 		memset(type_record, 0, sizeof(type_record));
 	}
-
+/*
   if (unlikely(type != DSM_PF_TYPES
 								&& type != DSM_PF_FAST
 								&& type != DSM_PF_ERR
@@ -765,14 +766,20 @@ static int kvm_dsm_page_fault(struct kvm *kvm, struct kvm_memory_slot *memslot,
 		// 	kvm->arch.dsm_id, type_desc[type], timespec_diff_ns(&ts_end, &ts_start));
 		array = type_record[type];
 		array[type_record_idx[type]] = timespec_diff_ns(&ts_end, &ts_start);
-		++type_record_idx[type];
+		if (unlikely(array[type_record_idx[type]] < 0
+			|| array[type_record_idx[type]] > 1000000000)) {
+			++count;
+			return ret;
+		} else {
+			++type_record_idx[type];
+		}
 
 		if (unlikely(type_record_idx[type] == NRECORD)) {
 			sum = 0;
 			for (j = 0; j < 10; ++j) {
-				printk(KERN_ERR "kvm-dsm-eval: %17s # %d: ", type_desc[type], j);
+				//printk(KERN_ERR "kvm-dsm-eval: %17s # %d: ", type_desc[type], j);
 				for (i = j * NRECORD / 10; i < (j + 1) * NRECORD / 10; ++i) {
-					printk(KERN_CONT "%ld ", array[i]);
+					//printk(KERN_CONT "%ld ", array[i]);
 					sum += array[i];
 				}
 			}
@@ -780,7 +787,18 @@ static int kvm_dsm_page_fault(struct kvm *kvm, struct kvm_memory_slot *memslot,
 			printk(KERN_ERR "kvm-dsm-eval: %17s AVG: %llu ns\n", type_desc[type], sum);
 			type_record_idx[type] = 0;
 		}
-  }
+  }*/
+	if (unlikely(type != DSM_PF_TYPES
+								&& type != DSM_PF_ERR
+							  && (count % 100 == 0)
+								&& kvm->arch.dsm_id == 0)) {
+		++type_record_count[type];
+		if (unlikely(count % 10000 == 0)) {
+			for (i = 0; i < DSM_PF_TYPES; ++i) {
+				printk(KERN_ERR "%17s: %llu", type_desc[i], type_record_count[i]);
+			}
+		}
+	}	
 	++count;
   return ret;
 }

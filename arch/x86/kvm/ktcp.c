@@ -218,7 +218,7 @@ read_again:
 	}
 	len += ret;
 	if (len != expected_size) {
-		printk(KERN_WARNING "ktcp_receive receive %d bytes which expected_size=%lu bytes, read again", len, expected_size);
+		// printk(KERN_WARNING "ktcp_receive receive %d bytes which expected_size=%lu bytes, read again", len, expected_size);
 		goto read_again;
 	}
 
