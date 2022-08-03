@@ -197,7 +197,7 @@ static int __ktcp_receive(struct socket *sock, char *buffer, size_t expected_siz
 read_again:
 	vec.iov_len = expected_size - len;
 	vec.iov_base = buffer + len;
-	ret = kernel_recvmsg(sock, &msg, &vec, 1, expected_size - len, flags | MSG_DONTWAIT);
+	ret = kernel_recvmsg(sock, &msg, &vec, 1, expected_size - len, flags);
 
 	if (ret == 0) {
 		return len;
@@ -329,7 +329,11 @@ int ktcp_connect(const char *host, const char *port, struct ktcp_cb **conn_cb)
 
 	memset(&saddr, 0, sizeof(saddr));
 	saddr.sin_family = AF_INET;
-	kstrtol(port, 10, &portdec);
+	ret = kstrtol(port, 10, &portdec);
+	if (ret < 0) {
+		printk(KERN_ERR "kstrtol error %d\n", ret);
+		return ret;
+	}
 	saddr.sin_port = htons(portdec);
 	saddr.sin_addr.s_addr = in_aton(host);
 
@@ -374,7 +378,11 @@ int ktcp_listen(const char *host, const char *port, struct ktcp_cb **listen_cb)
 	}
 	memset(&saddr, 0, sizeof(saddr));
 	saddr.sin_family = AF_INET;
-	kstrtol(port, 10, &portdec);
+	ret = kstrtol(port, 10, &portdec);
+	if (ret < 0) {
+		printk(KERN_ERR "kstrtol error %d\n", ret);
+		return ret;
+	}
 	saddr.sin_port = htons(portdec);
 	saddr.sin_addr.s_addr = in_aton(host);
 

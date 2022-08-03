@@ -690,6 +690,11 @@ extern bool kvm_dsm_dbg_verbose;
 	typedef struct krdma_cb kconnection_t;
 #endif
 
+#ifdef IVY_KVM_DSM
+	#include "../../kvm/ivy.h"
+#elif defined(TARDIS_KVM_DSM)
+	#include "../../kvm/tardis.h"
+#endif
 /*
  * copyset is actually uint16_t. Hacking here is used for compatibility with
  * bitmap ops in linux kernel.

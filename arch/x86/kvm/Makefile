@@ -26,7 +26,7 @@ kvm-y			+= x86.o mmu.o emulate.o i8259.o irq.o lapic.o \
 
 kvm-$(CONFIG_KVM_DEVICE_ASSIGNMENT)	+= assigned-dev.o iommu.o
 
-kvm-$(CONFIG_KVM_DSM)			+= ktcp.o krdma.o dsm.o xbzrle.o \
+kvm-$(CONFIG_KVM_DSM)			+= ktcp.o dsm.o xbzrle.o \
 								   dsm-util.o ivy.o \
 
 kvm-intel-y		+= vmx.o pmu_intel.o

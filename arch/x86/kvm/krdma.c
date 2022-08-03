@@ -324,7 +324,11 @@ static int krdma_connect_single(const char *host, const char *port,
 	/* Resolve address */
 	memset(&addr, 0, sizeof(addr));
 	addr.sin_family = AF_INET;
-	kstrtol(port, 10, &portdec);
+	ret = kstrtol(port, 10, &portdec);
+	if (ret < 0) {
+		printk(KERN_ERR "kstrtol error %d\n", ret);
+		goto exit;
+	}
 	addr.sin_addr.s_addr = in_aton(host);
 	addr.sin_port = htons(portdec);
 	ret = rdma_resolve_addr(cb->cm_id, NULL,
@@ -549,7 +553,11 @@ int krdma_listen(const char *host, const char *port, struct krdma_cb **listen_cb
 	/* Bind address. */
 	memset(&addr, 0, sizeof(addr));
 	addr.sin_family = AF_INET;
-	kstrtol(port, 10, &portdec);
+	ret = kstrtol(port, 10, &portdec);
+	if (ret < 0) {
+		printk(KERN_ERR "kstrtol error %d\n", ret);
+		goto exit;
+	}
 	addr.sin_addr.s_addr = in_aton(host);
 	addr.sin_port = htons(portdec);
 	ret = rdma_bind_addr(cb->cm_id, (struct sockaddr *)&addr);

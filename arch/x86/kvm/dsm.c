@@ -551,7 +551,7 @@ static int kvm_dsm_init(struct kvm *kvm, struct kvm_dsm_params *params)
 		ret = -ENOMEM;
 		goto out_free_cluster_iplist;
 	}
-	copy_from_user(user_cluster_iplist, params->cluster_iplist, sizeof(void *) *
+	ret = copy_from_user(user_cluster_iplist, params->cluster_iplist, sizeof(void *) *
 			params->cluster_iplist_len);
 	for (i = 0; i < params->cluster_iplist_len; i++) {
 		kvm->arch.cluster_iplist[i] = (char *)kmalloc(20, GFP_KERNEL);
@@ -559,7 +559,11 @@ static int kvm_dsm_init(struct kvm *kvm, struct kvm_dsm_params *params)
 			ret = -ENOMEM;
 			goto out_free_cluster_iplist;
 		}
-		strncpy_from_user(kvm->arch.cluster_iplist[i], user_cluster_iplist[i], 20);
+		ret = strncpy_from_user(kvm->arch.cluster_iplist[i], user_cluster_iplist[i], 20);
+		if (ret < 0) {
+			printk(KERN_ERR "kvm-dsm: strncpy_from_user failed\n");
+			goto out_free_cluster_iplist;
+		}
 	}
 
 	mutex_init(&kvm->arch.conn_init_lock);

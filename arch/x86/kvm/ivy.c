@@ -648,164 +648,183 @@ static bool is_fast_path(struct kvm *kvm, struct kvm_dsm_memory_slot *slot,
  * 1. Upon a write fault, the version of requster is resp.version (old owner) + 1
  * 2. Upon a read fault, the version of requester is the same as resp.version
  */
-int ivy_kvm_dsm_page_fault(struct kvm *kvm, struct kvm_memory_slot *memslot,
-		gfn_t gfn, bool is_smm, int write)
-{
-	int ret, resp_len = 0;
-	struct kvm_dsm_memory_slot *slot;
-	hfn_t vfn;
-	char *page = NULL;
-	struct dsm_response resp;
-	int owner;
 
-	ret = 0;
-	vfn = __gfn_to_vfn_memslot(memslot, gfn);
-	slot = gfn_to_hvaslot(kvm, memslot, gfn);
+int ivy_kvm_dsm_async_pf_execute(struct kvm *kvm, gfn_t gfn, bool is_smm, struct kvm_memory_slot *memslot,
+		int write, struct kvm_dsm_memory_slot *slot, hfn_t vfn) {
+    int ret = 0;
+    char *page = NULL;
+    struct dsm_request req;
+    struct dsm_response resp;
+    int owner;
+	int resp_len = 0;
 
-	if (is_fast_path(kvm, slot, vfn, write)) {
-		if (write) {
-			return ACC_ALL;
-		}
-		else {
-			return ACC_EXEC_MASK | ACC_USER_MASK;
-		}
-	}
+    page = kmalloc(PAGE_SIZE, GFP_KERNEL);
+    if (page == NULL) {
+        ret = -ENOMEM;
+        goto out;
+    }
 
-	BUG_ON(dsm_is_initial(slot, vfn) && dsm_get_prob_owner(slot, vfn) != 0);
+    if (write) {
+        req.req_type = DSM_REQ_WRITE;
+        req.requester = kvm->arch.dsm_id;
+        req.msg_sender = kvm->arch.dsm_id;
+        req.gfn = gfn;
+        req.is_smm = is_smm;
+        req.version = dsm_get_version(slot, vfn);
 
-	page = kmalloc(PAGE_SIZE, GFP_KERNEL);
-	if (page == NULL) {
-		ret = -ENOMEM;
-		goto out_error;
-	}
+        if (dsm_is_owner(slot, vfn)) {
+            BUG_ON(dsm_get_prob_owner(slot, vfn) != kvm->arch.dsm_id);
 
-	/*
-	 * If #PF is owner write fault, then issue invalidate by itself.
-	 * Or this node will be owner after #PF, it still issue invalidate by
-	 * receiving copyset from old owner.
-	 */
-	if (write) {
-		struct dsm_request req = {
-			.req_type = DSM_REQ_WRITE,
-			.requester = kvm->arch.dsm_id,
-			.msg_sender = kvm->arch.dsm_id,
-			.gfn = gfn,
-			.is_smm = is_smm,
-			.version = dsm_get_version(slot, vfn),
-		};
-		if (dsm_is_owner(slot, vfn)) {
-			BUG_ON(dsm_get_prob_owner(slot, vfn) != kvm->arch.dsm_id);
+            ret = kvm_dsm_invalidate(kvm, gfn, is_smm, slot, vfn, NULL, kvm->arch.dsm_id);
+            if (unlikely(ret < 0))
+                goto out;
+            resp.version = dsm_get_version(slot, vfn);
+            resp_len = PAGE_SIZE;
 
-			ret = kvm_dsm_invalidate(kvm, gfn, is_smm, slot, vfn, NULL, kvm->arch.dsm_id);
-			if (ret < 0)
-				goto out_error;
-			resp.version = dsm_get_version(slot, vfn);
-			resp_len = PAGE_SIZE;
+            dsm_incr_version(slot, vfn);
+        }
+        else {
+            owner = dsm_get_prob_owner(slot, vfn);
+            /*
+             * Ask the probOwner. The prob(ably) owner is probably true owner,
+             * or not. If not, forward the request to next probOwner until find
+             * the true owner.
+             */
+            ret = resp_len = kvm_dsm_fetch(kvm, owner, false, &req, page,
+                    &resp);
+            if (unlikely(ret < 0))
+                goto out;
+            ret = kvm_dsm_invalidate(kvm, gfn, is_smm, slot, vfn,
+                    &resp.inv_copyset, owner);
+            if (unlikely(ret < 0))
+                goto out;
 
-			dsm_incr_version(slot, vfn);
-		}
-		else {
-			owner = dsm_get_prob_owner(slot, vfn);
-			/* Owner of all pages is 0 on init. */
-			if (unlikely(dsm_is_initial(slot, vfn) && kvm->arch.dsm_id == 0)) {
-				dsm_set_prob_owner(slot, vfn, kvm->arch.dsm_id);
-				dsm_change_state(slot, vfn, DSM_OWNER | DSM_MODIFIED);
-				dsm_add_to_copyset(slot, vfn, kvm->arch.dsm_id);
-				ret = ACC_ALL;
-				goto out;
-			}
-			/*
-			 * Ask the probOwner. The prob(ably) owner is probably true owner,
-			 * or not. If not, forward the request to next probOwner until find
-			 * the true owner.
-			 */
-			ret = resp_len = kvm_dsm_fetch(kvm, owner, false, &req, page,
-					&resp);
-			if (ret < 0)
-				goto out_error;
-			ret = kvm_dsm_invalidate(kvm, gfn, is_smm, slot, vfn,
-					&resp.inv_copyset, owner);
-			if (ret < 0)
-				goto out_error;
+            dsm_set_version(slot, vfn, resp.version + 1);
+        }
 
-			dsm_set_version(slot, vfn, resp.version + 1);
-		}
+        dsm_clear_copyset(slot, vfn);
+        dsm_add_to_copyset(slot, vfn, kvm->arch.dsm_id);
 
-		dsm_clear_copyset(slot, vfn);
-		dsm_add_to_copyset(slot, vfn, kvm->arch.dsm_id);
+        dsm_decode_diff(page, resp_len, memslot, gfn);
+        dsm_set_twin_conditionally(slot, vfn, page, memslot, gfn,
+                dsm_is_owner(slot, vfn), resp.version);
 
-		dsm_decode_diff(page, resp_len, memslot, gfn);
-		dsm_set_twin_conditionally(slot, vfn, page, memslot, gfn,
-				dsm_is_owner(slot, vfn), resp.version);
+        if (!dsm_is_owner(slot, vfn) && resp_len > 0) {
+            ret = __kvm_write_guest_page(memslot, gfn, page, 0, PAGE_SIZE);
+            if (unlikely(ret < 0)) {
+                goto out;
+            }
+        }
 
-		if (!dsm_is_owner(slot, vfn) && resp_len > 0) {
-			ret = __kvm_write_guest_page(memslot, gfn, page, 0, PAGE_SIZE);
-			if (ret < 0) {
-				goto out_error;
-			}
-		}
+        dsm_set_prob_owner(slot, vfn, kvm->arch.dsm_id);
+        dsm_change_state(slot, vfn, DSM_OWNER | DSM_MODIFIED);
+        ret = ACC_ALL;
 
-		dsm_set_prob_owner(slot, vfn, kvm->arch.dsm_id);
-		dsm_change_state(slot, vfn, DSM_OWNER | DSM_MODIFIED);
-		ret = ACC_ALL;
-	} else {
-		struct dsm_request req = {
-			.req_type = DSM_REQ_READ,
-			.requester = kvm->arch.dsm_id,
-			.msg_sender = kvm->arch.dsm_id,
-			.gfn = gfn,
-			.is_smm = is_smm,
-			.version = dsm_get_version(slot, vfn),
-		};
-		owner = dsm_get_prob_owner(slot, vfn);
-		/*
-		 * If I'm the owner, then I would have already been in Shared or
-		 * Modified state.
-		 */
-		BUG_ON(dsm_is_owner(slot, vfn));
+    } else {
+        req.req_type = DSM_REQ_READ;
+        req.requester = kvm->arch.dsm_id;
+        req.msg_sender = kvm->arch.dsm_id;
+        req.gfn = gfn;
+        req.is_smm = is_smm;
+        req.version = dsm_get_version(slot, vfn);
+        owner = dsm_get_prob_owner(slot, vfn);
 
-		/* Owner of all pages is 0 on init. */
-		if (unlikely(dsm_is_initial(slot, vfn) && kvm->arch.dsm_id == 0)) {
-			dsm_set_prob_owner(slot, vfn, kvm->arch.dsm_id);
-			dsm_change_state(slot, vfn, DSM_OWNER | DSM_SHARED);
-			dsm_add_to_copyset(slot, vfn, kvm->arch.dsm_id);
-			ret = ACC_EXEC_MASK | ACC_USER_MASK;
-			goto out;
-		}
-		/* Ask the probOwner */
-		ret = resp_len = kvm_dsm_fetch(kvm, owner, false, &req, page, &resp);
-		if (ret < 0)
-			goto out_error;
+        /* Ask the probOwner */
+        ret = resp_len = kvm_dsm_fetch(kvm, owner, false, &req, page, &resp);
+        if (unlikely(ret < 0))
+            goto out;
 
-		dsm_set_version(slot, vfn, resp.version);
-		memcpy(dsm_get_copyset(slot, vfn), &resp.inv_copyset, sizeof(copyset_t));
-		dsm_add_to_copyset(slot, vfn, kvm->arch.dsm_id);
+        dsm_set_version(slot, vfn, resp.version);
+        memcpy(dsm_get_copyset(slot, vfn), &resp.inv_copyset, sizeof(copyset_t));
+        dsm_add_to_copyset(slot, vfn, kvm->arch.dsm_id);
 
-		dsm_decode_diff(page, resp_len, memslot, gfn);
+        dsm_decode_diff(page, resp_len, memslot, gfn);
 
-		ret = __kvm_write_guest_page(memslot, gfn, page, 0, PAGE_SIZE);
-		if (ret < 0)
-			goto out_error;
+        ret = __kvm_write_guest_page(memslot, gfn, page, 0, PAGE_SIZE);
+        if (unlikely(ret < 0))
+            goto out;
 
-		dsm_set_prob_owner(slot, vfn, kvm->arch.dsm_id);
-		/*
-		 * The node becomes owner after read fault because of data locality,
-		 * i.e. a write fault may occur soon. It's not designed to avoid annoying
-		 * bugs, right? See comments of dsm_handle_read_req.
-		 */
-		dsm_change_state(slot, vfn, DSM_OWNER | DSM_SHARED);
-		ret = ACC_EXEC_MASK | ACC_USER_MASK;
-	}
+        dsm_set_prob_owner(slot, vfn, kvm->arch.dsm_id);
+        /*
+         * The node becomes owner after read fault because of data locality,
+         * i.e. a write fault may occur soon. It's not designed to avoid annoying
+         * bugs, right? See comments of dsm_handle_read_req.
+         */
+        dsm_change_state(slot, vfn, DSM_OWNER | DSM_SHARED);
+        ret = ACC_EXEC_MASK | ACC_USER_MASK;
+    }
 
-out:
 	kvm_dsm_pf_trace(kvm, slot, vfn, write, resp_len);
-	kfree(page);
-	return ret;
+out:
+    kfree(page);
+    return ret;
+}
+
+int ivy_kvm_dsm_page_fault(struct kvm *kvm, struct kvm_memory_slot *memslot,
+        gfn_t gfn, bool is_smm, int write)
+{
+    int ret = 0;
+    struct kvm_dsm_memory_slot *slot;
+    hfn_t vfn;
+
+    vfn = __gfn_to_vfn_memslot(memslot, gfn);
+    slot = gfn_to_hvaslot(kvm, memslot, gfn);
+
+    if (is_fast_path(kvm, slot, vfn, write)) {
+        if (write) {
+            return ACC_ALL;
+        }
+        else {
+            return ACC_EXEC_MASK | ACC_USER_MASK;
+        }
+    }
+
+    BUG_ON(dsm_is_initial(slot, vfn) && dsm_get_prob_owner(slot, vfn) != 0);
+
+    /*
+     * If #PF is owner write fault, then issue invalidate by itself.
+     * Or this node will be owner after #PF, it still issue invalidate by
+     * receiving copyset from old owner.
+     */
+    if (write) {
+        /* Owner of all pages is 0 on init. */
+        if (!dsm_is_owner(slot, vfn)
+            && unlikely(dsm_is_initial(slot, vfn) && kvm->arch.dsm_id == 0)) {
+            dsm_set_prob_owner(slot, vfn, kvm->arch.dsm_id);
+            dsm_change_state(slot, vfn, DSM_OWNER | DSM_MODIFIED);
+            dsm_add_to_copyset(slot, vfn, kvm->arch.dsm_id);
+            ret = ACC_ALL;
+        } else {
+            ret = ivy_kvm_dsm_async_pf_execute(kvm, gfn, is_smm, memslot, write, slot, vfn);
+            if (unlikely(ret < 0))
+                goto out_error;
+        }
+    } else {
+        /*
+         * If I'm the owner, then I would have already been in Shared or
+         * Modified state.
+         */
+        BUG_ON(dsm_is_owner(slot, vfn));
+
+        /* Owner of all pages is 0 on init. */
+        if (unlikely(dsm_is_initial(slot, vfn) && kvm->arch.dsm_id == 0)) {
+            dsm_set_prob_owner(slot, vfn, kvm->arch.dsm_id);
+            dsm_change_state(slot, vfn, DSM_OWNER | DSM_SHARED);
+            dsm_add_to_copyset(slot, vfn, kvm->arch.dsm_id);
+            ret = ACC_EXEC_MASK | ACC_USER_MASK;
+        } else {
+            ret = ivy_kvm_dsm_async_pf_execute(kvm, gfn, is_smm, memslot, write, slot, vfn);
+            if (unlikely(ret < 0))
+                goto out_error;
+        }
+    }
+
+    return ret;
 
 out_error:
-	dump_stack();
-	printk(KERN_ERR "kvm-dsm: node-%d failed to handle page fault on gfn[%llu,%d], "
-			"error: %d\n", kvm->arch.dsm_id, gfn, is_smm, ret);
-	kfree(page);
-	return ret;
+    dump_stack();
+    printk(KERN_ERR "kvm-dsm: node-%d failed to handle page fault on gfn[%llu,%d], "
+            "error: %d\n", kvm->arch.dsm_id, gfn, is_smm, ret);
+    return ret;
 }
+

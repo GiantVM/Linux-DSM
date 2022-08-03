@@ -128,7 +128,7 @@ int xbzrle_encode_buffer(const uint8_t *old_buf, const uint8_t *new_buf, int sle
         d += uleb128_encode_small(dst + d, zrun_len);
 
         zrun_len = 0;
-        nzrun_start = new_buf + i;
+        nzrun_start = (uint8_t *) new_buf + i;
 
         /* overflow */
         if (d + 2 > dlen) {
