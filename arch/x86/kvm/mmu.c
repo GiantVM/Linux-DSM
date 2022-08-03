@@ -134,6 +134,8 @@ module_param(dbg, bool, 0644);
 #define ACC_USER_MASK    PT_USER_MASK
 #define ACC_ALL          (ACC_EXEC_MASK | ACC_WRITE_MASK | ACC_USER_MASK)
 
+#define ACC_ASYNC		(1 << 3)
+
 #include <trace/events/kvm.h>
 
 #define CREATE_TRACE_POINTS
@@ -3892,6 +3894,8 @@ static int tdp_page_fault(struct kvm_vcpu *vcpu, gva_t gpa, u32 error_code,
 	if (dsm_access < 0) {
 		kvm_release_pfn_clean(pfn);
 		return dsm_access;
+	} else if (dsm_access == ACC_ASYNC) {
+		return 0;
 	}
 
 	spin_lock(&vcpu->kvm->mmu_lock);

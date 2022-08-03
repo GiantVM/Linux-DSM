@@ -186,6 +186,24 @@ struct kvm_async_pf {
 	bool   wakeup_all;
 };
 
+#ifdef IVY_KVM_DSM
+struct ivy_kvm_dsm_async_pf {
+	struct work_struct work;
+	struct list_head link;
+	struct list_head queue;
+	struct kvm_vcpu *vcpu;
+	gfn_t gfn;
+	bool is_smm;
+	struct kvm_memory_slot *memslot;
+	int write;
+	struct kvm_dsm_memory_slot *slot;
+	hfn_t vfn;
+};
+int kvm_setup_ivy_dsm_async_pf(struct kvm_vcpu *vcpu, gfn_t gfn, bool is_smm,
+		struct kvm_memory_slot *memslot, int write,
+		struct kvm_dsm_memory_slot *slot, hfn_t vfn);
+#endif
+
 void kvm_clear_async_pf_completion_queue(struct kvm_vcpu *vcpu);
 void kvm_check_async_pf_completion(struct kvm_vcpu *vcpu);
 int kvm_setup_async_pf(struct kvm_vcpu *vcpu, gva_t gva, unsigned long hva,

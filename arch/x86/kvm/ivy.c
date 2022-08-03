@@ -8,6 +8,7 @@
  * 
  * Authors:
  *   Jin Zhang <jzhang3002@sjtu.edu.cn>
+ *   Xingguo Jia <jiaxg1998@sjtu.edu.cn>
  *
  * This work is licensed under the terms of the GNU GPL, version 2.  See
  * the COPYING file in the top-level directory.
@@ -649,8 +650,9 @@ static bool is_fast_path(struct kvm *kvm, struct kvm_dsm_memory_slot *slot,
  * 2. Upon a read fault, the version of requester is the same as resp.version
  */
 
-int __ivy_kvm_dsm_page_fault_remote(struct kvm *kvm, gfn_t gfn, bool is_smm, struct kvm_memory_slot *memslot,
-		int write, struct kvm_dsm_memory_slot *slot, hfn_t vfn) {
+int __ivy_kvm_dsm_page_fault(struct kvm *kvm, gfn_t gfn, bool is_smm,
+		struct kvm_memory_slot *memslot, int write,
+		struct kvm_dsm_memory_slot *slot, hfn_t vfn, bool local) {
     int ret = 0;
     char *page = NULL;
     struct dsm_request req;
@@ -710,7 +712,10 @@ int __ivy_kvm_dsm_page_fault_remote(struct kvm *kvm, gfn_t gfn, bool is_smm, str
                 dsm_is_owner(slot, vfn), resp.version);
 
         if (!dsm_is_owner(slot, vfn) && resp_len > 0) {
-            ret = __kvm_write_guest_page(memslot, gfn, page, 0, PAGE_SIZE);
+			if (local)
+				ret = __kvm_write_guest_page(memslot, gfn, page, 0, PAGE_SIZE);
+			else
+				ret = kvm_write_guest_page_nonlocal(kvm, memslot, gfn, page, 0, PAGE_SIZE);
             if (unlikely(ret < 0)) {
                 goto out;
             }
@@ -740,7 +745,10 @@ int __ivy_kvm_dsm_page_fault_remote(struct kvm *kvm, gfn_t gfn, bool is_smm, str
 
         dsm_decode_diff(page, resp_len, memslot, gfn);
 
-        ret = __kvm_write_guest_page(memslot, gfn, page, 0, PAGE_SIZE);
+		if (local)
+        	ret = __kvm_write_guest_page(memslot, gfn, page, 0, PAGE_SIZE);
+		else
+			ret = kvm_write_guest_page_nonlocal(kvm, memslot, gfn, page, 0, PAGE_SIZE);
         if (unlikely(ret < 0))
             goto out;
 
@@ -758,11 +766,6 @@ int __ivy_kvm_dsm_page_fault_remote(struct kvm *kvm, gfn_t gfn, bool is_smm, str
 out:
     kfree(page);
     return ret;
-}
-
-int __ivy_kvm_dsm_vcpu_page_fault_remote(struct kvm_vcpu *vcpu, gfn_t gfn, bool is_smm, struct kvm_memory_slot *memslot,
-		int write, struct kvm_dsm_memory_slot *slot, hfn_t vfn) {
-    return __ivy_kvm_dsm_page_fault_remote(vcpu->kvm, gfn, is_smm, memslot, write, slot, vfn);
 }
 
 int ivy_kvm_dsm_page_fault(struct kvm *kvm, struct kvm_memory_slot *memslot,
@@ -800,7 +803,7 @@ int ivy_kvm_dsm_page_fault(struct kvm *kvm, struct kvm_memory_slot *memslot,
             dsm_add_to_copyset(slot, vfn, kvm->arch.dsm_id);
             ret = ACC_ALL;
         } else {
-            ret = __ivy_kvm_dsm_page_fault_remote(kvm, gfn, is_smm, memslot, write, slot, vfn);
+            ret = __ivy_kvm_dsm_page_fault(kvm, gfn, is_smm, memslot, write, slot, vfn, true);
             if (unlikely(ret < 0))
                 goto out_error;
         }
@@ -818,7 +821,7 @@ int ivy_kvm_dsm_page_fault(struct kvm *kvm, struct kvm_memory_slot *memslot,
             dsm_add_to_copyset(slot, vfn, kvm->arch.dsm_id);
             ret = ACC_EXEC_MASK | ACC_USER_MASK;
         } else {
-            ret = __ivy_kvm_dsm_page_fault_remote(kvm, gfn, is_smm, memslot, write, slot, vfn);
+            ret = __ivy_kvm_dsm_page_fault(kvm, gfn, is_smm, memslot, write, slot, vfn, true);
             if (unlikely(ret < 0))
                 goto out_error;
         }
@@ -834,6 +837,11 @@ out_error:
 }
 
 int ivy_kvm_dsm_vcpu_page_fault(struct kvm_vcpu *vcpu, struct kvm_memory_slot *memslot,
+		gfn_t gfn, bool is_smm, int write) {
+	return ivy_kvm_dsm_page_fault(vcpu->kvm, memslot, gfn, is_smm, write);
+}
+
+int ivy_kvm_dsm_vcpu_page_fault_async(struct kvm_vcpu *vcpu, struct kvm_memory_slot *memslot,
 		gfn_t gfn, bool is_smm, int write) {
 	int ret = 0;
     struct kvm_dsm_memory_slot *slot;
@@ -868,7 +876,7 @@ int ivy_kvm_dsm_vcpu_page_fault(struct kvm_vcpu *vcpu, struct kvm_memory_slot *m
             dsm_add_to_copyset(slot, vfn, kvm->arch.dsm_id);
             ret = ACC_ALL;
         } else {
-            ret = __ivy_kvm_dsm_vcpu_page_fault_remote(vcpu, gfn, is_smm, memslot, write, slot, vfn);
+            ret = __ivy_kvm_dsm_page_fault(vcpu->kvm, gfn, is_smm, memslot, write, slot, vfn, false);
             if (unlikely(ret < 0))
                 goto out_error;
         }
@@ -886,7 +894,7 @@ int ivy_kvm_dsm_vcpu_page_fault(struct kvm_vcpu *vcpu, struct kvm_memory_slot *m
             dsm_add_to_copyset(slot, vfn, kvm->arch.dsm_id);
             ret = ACC_EXEC_MASK | ACC_USER_MASK;
         } else {
-            ret = __ivy_kvm_dsm_vcpu_page_fault_remote(vcpu, gfn, is_smm, memslot, write, slot, vfn);
+            ret = __ivy_kvm_dsm_page_fault(vcpu->kvm, gfn, is_smm, memslot, write, slot, vfn, false);
             if (unlikely(ret < 0))
                 goto out_error;
         }

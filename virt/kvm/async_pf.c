@@ -5,6 +5,7 @@
  *
  * Author:
  *      Gleb Natapov <gleb@redhat.com>
+ *      Xingguo Jia <jiaxg1998@sjtu.edu.cn>
  *
  * This file is free software; you can redistribute it and/or modify
  * it under the terms of version 2 of the GNU General Public License
@@ -44,6 +45,9 @@ static inline void kvm_async_page_present_async(struct kvm_vcpu *vcpu,
 }
 
 static struct kmem_cache *async_pf_cache;
+#ifdef IVY_KVM_DSM
+static struct kmem_cache *ivy_dsm_async_pf_cache;
+#endif
 
 int kvm_async_pf_init(void)
 {
@@ -52,6 +56,12 @@ int kvm_async_pf_init(void)
 	if (!async_pf_cache)
 		return -ENOMEM;
 
+#ifdef IVY_KVM_DSM
+	ivy_dsm_async_pf_cache = KMEM_CACHE(ivy_kvm_dsm_async_pf, 0);
+	if (!ivy_dsm_async_pf_cache)
+		return -ENOMEM;
+#endif
+
 	return 0;
 }
 
@@ -59,6 +69,10 @@ void kvm_async_pf_deinit(void)
 {
 	kmem_cache_destroy(async_pf_cache);
 	async_pf_cache = NULL;
+#ifdef IVY_KVM_DSM
+	kmem_cache_destroy(ivy_dsm_async_pf_cache);
+	ivy_dsm_async_pf_cache = NULL;
+#endif
 }
 
 void kvm_async_pf_vcpu_init(struct kvm_vcpu *vcpu)
@@ -111,6 +125,46 @@ static void async_pf_execute(struct work_struct *work)
 	mmput(mm);
 	kvm_put_kvm(vcpu->kvm);
 }
+
+#ifdef IVY_KVM_DSM
+static void ivy_dsm_async_pf_execute(struct work_struct *work) {
+	struct ivy_kvm_dsm_async_pf *apf =
+		container_of(work, struct ivy_kvm_dsm_async_pf, work);
+	struct kvm_vcpu *vcpu = apf->vcpu;	
+
+	might_sleep();
+
+	/*
+	 * This work is run asynchromously to the task which owns
+	 * mm and might be done in another context, so we must
+	 * use local = false.
+	 */
+	__ivy_kvm_dsm_page_fault(vcpu->kvm, apf->gfn, apf->is_smm,
+		apf->memslot, apf->write, apf->slot, apf->vfn, false);
+
+	// kvm_async_page_present_sync(vcpu, apf);
+
+	spin_lock(&vcpu->async_pf.lock);
+	list_add_tail(&apf->link, &vcpu->async_pf.done);
+	apf->vcpu = NULL;
+	spin_unlock(&vcpu->async_pf.lock);
+
+	/*
+	 * apf may be freed by kvm_check_async_pf_completion() after
+	 * this point
+	 */
+
+	/*
+	 * This memory barrier pairs with prepare_to_wait's set_current_state()
+	 */
+	smp_mb();
+	if (swait_active(&vcpu->wq))
+		swake_up(&vcpu->wq);
+	
+	mmput(vcpu->kvm->mm);
+	kvm_put_kvm(vcpu->kvm);
+}
+#endif
 
 void kvm_clear_async_pf_completion_queue(struct kvm_vcpu *vcpu)
 {
@@ -222,6 +276,52 @@ retry_sync:
 	kmem_cache_free(async_pf_cache, work);
 	return 0;
 }
+
+#ifdef IVY_KVM_DSM
+int kvm_setup_ivy_dsm_async_pf(struct kvm_vcpu *vcpu, gfn_t gfn, bool is_smm,
+		struct kvm_memory_slot *memslot, int write,
+		struct kvm_dsm_memory_slot *slot, hfn_t vfn)
+{
+	struct ivy_kvm_dsm_async_pf *work;
+
+	if (vcpu->async_pf.queued >= ASYNC_PF_PER_VCPU)
+		return 0;
+
+	/* setup delayed work */
+
+	/*
+	 * do alloc nowait since if we are going to sleep anyway we
+	 * may as well sleep faulting in page
+	 */
+	work = kmem_cache_zalloc(ivy_dsm_async_pf_cache, GFP_NOWAIT | __GFP_NOWARN);
+	if (!work)
+		return 0;
+
+	work->vcpu = vcpu;
+	work->gfn = gfn;
+	work->is_smm = is_smm;
+	work->memslot = memslot;
+	work->write = write;
+	work->slot = slot;
+	work->vfn = vfn;
+	atomic_inc(&work->vcpu->kvm->mm->mm_users);
+	kvm_get_kvm(work->vcpu->kvm);
+
+	INIT_WORK(&work->work, ivy_dsm_async_pf_execute);
+	if (!schedule_work(&work->work))
+		goto retry_sync;
+
+	list_add_tail(&work->queue, &vcpu->async_pf.queue);
+	vcpu->async_pf.queued++;
+	// kvm_arch_async_page_not_present(vcpu, work);
+	return 1;
+retry_sync:
+	kvm_put_kvm(work->vcpu->kvm);
+	mmput(work->vcpu->kvm->mm);
+	kmem_cache_free(ivy_dsm_async_pf_cache, work);
+	return 0;
+}
+#endif
 
 int kvm_async_pf_wakeup_all(struct kvm_vcpu *vcpu)
 {

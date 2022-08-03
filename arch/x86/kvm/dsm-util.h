@@ -45,6 +45,8 @@ extern bool kvm_dsm_dbg_verbose;
 #define ACC_USER_MASK    PT_USER_MASK
 #define ACC_ALL          (ACC_EXEC_MASK | ACC_WRITE_MASK | ACC_USER_MASK)
 
+#define ACC_ASYNC		(1 << 3)
+
 struct kvm_network_ops {
 	int (*send)(kconnection_t *, const char *, size_t, unsigned long,
 			const tx_add_t*);

@@ -28,6 +28,8 @@ int kvm_dsm_acquire_page(struct kvm *kvm, struct kvm_memory_slot **slot,
 		gfn_t gfn, bool write);
 int kvm_dsm_vcpu_acquire_page(struct kvm_vcpu *vcpu,
 		struct kvm_memory_slot **slot, gfn_t gfn, bool write);
+int kvm_dsm_vcpu_acquire_page_async(struct kvm_vcpu *vcpu,
+		struct kvm_memory_slot **slot, gfn_t gfn, bool write);
 void kvm_dsm_release_page(struct kvm *kvm, struct kvm_memory_slot *slot,
 		gfn_t gfn);
 void kvm_dsm_vcpu_release_page(struct kvm_vcpu *vcpu,
@@ -62,6 +64,13 @@ static inline int kvm_dsm_vcpu_acquire_page(struct kvm_vcpu *vcpu,
 		struct kvm_memory_slot **slot, gfn_t gfn, bool write)
 {
 	return (1 | PT_WRITABLE_MASK | PT_USER_MASK);
+}
+
+static inline int kvm_dsm_vcpu_acquire_page_async(struct kvm_vcpu *vcpu,
+		struct kvm_memory_slot **slot, gfn_t gfn, bool write)
+{
+	return (1 | PT_WRITABLE_MASK | PT_USER_MASK);
+}
 }
 
 static inline void kvm_dsm_release_page(struct kvm *kvm,
