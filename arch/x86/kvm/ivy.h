@@ -11,10 +11,16 @@
  */
 struct kvm_dsm_memory_slot;
 
-int ivy_kvm_dsm_async_pf_execute(struct kvm *kvm, gfn_t gfn, bool is_smm, struct kvm_memory_slot *memslot,
+int __ivy_kvm_dsm_page_fault_remote(struct kvm *kvm, gfn_t gfn, bool is_smm, struct kvm_memory_slot *memslot,
 		int write, struct kvm_dsm_memory_slot *slot, hfn_t vfn);
+int __ivy_kvm_dsm_vcpu_page_fault_remote(struct kvm_vcpu *vcpu, gfn_t gfn, bool is_smm, struct kvm_memory_slot *memslot,
+		int write, struct kvm_dsm_memory_slot *slot, hfn_t vfn);
+
 int ivy_kvm_dsm_handle_req(void *data);
+
 int ivy_kvm_dsm_page_fault(struct kvm *kvm, struct kvm_memory_slot *memslot,
+		gfn_t gfn, bool is_smm, int write);
+int ivy_kvm_dsm_vcpu_page_fault(struct kvm_vcpu *vcpu, struct kvm_memory_slot *memslot,
 		gfn_t gfn, bool is_smm, int write);
 
 #endif /* ARCH_X86_KVM_IVY_H */

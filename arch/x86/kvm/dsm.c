@@ -28,6 +28,8 @@ bool kvm_dsm_dbg_verbose = 0;
 
 static int kvm_dsm_page_fault(struct kvm *kvm, struct kvm_memory_slot *memslot,
 		gfn_t gfn, bool is_smm, int write);
+static int kvm_dsm_vcpu_page_fault(struct kvm_vcpu *vcpu, struct kvm_memory_slot *memslot,
+		gfn_t gfn, bool is_smm, int write);
 
 /*
  * The old dsm_memslots are free here rather than kvm_dsm_remove_memslot.
@@ -263,6 +265,41 @@ static int __kvm_dsm_acquire_page(struct kvm *kvm,
 	return dsm_access;
 }
 
+static int __kvm_dsm_vcpu_acquire_page(struct kvm_vcpu *vcpu,
+		struct kvm_memory_slot *slot, gfn_t gfn, bool is_smm, bool write)
+{
+	struct kvm_dsm_memory_slot *hvaslot;
+	hfn_t vfn;
+	int dsm_access;
+	struct kvm *kvm = vcpu->kvm;
+
+	if (WARN_ON(kvm->mm != current->mm))
+		return -EINVAL;
+	if (!kvm->arch.dsm_enabled)
+		return ACC_ALL;
+
+	/*
+	 * We should ignore private memslots since they are not really visible
+	 * to guest and thus are not part of guest state that should be
+	 * distributedly shared.
+	 */
+	if (!slot || slot->id >= KVM_USER_MEM_SLOTS ||
+			slot->flags & KVM_MEMSLOT_INVALID)
+		return ACC_ALL;
+
+	vfn = __gfn_to_vfn_memslot(slot, gfn);
+	hvaslot = gfn_to_hvaslot(kvm, slot, gfn);
+	if (!hvaslot)
+		return ACC_ALL;
+
+	dsm_lock(kvm, hvaslot, vfn);
+	dsm_access = kvm_dsm_vcpu_page_fault(vcpu, slot, gfn, is_smm, write);
+	if (dsm_access < 0) {
+		dsm_unlock(kvm, hvaslot, vfn);
+	}
+	return dsm_access;
+}
+
 int kvm_dsm_acquire_page(struct kvm *kvm, struct kvm_memory_slot **slot,
 		gfn_t gfn, bool write)
 {
@@ -280,7 +317,7 @@ int kvm_dsm_vcpu_acquire_page(struct kvm_vcpu *vcpu,
 	memslot = kvm_vcpu_gfn_to_memslot(vcpu, gfn);
 	if (slot)
 		*slot = memslot;
-	return __kvm_dsm_acquire_page(vcpu->kvm, memslot,
+	return __kvm_dsm_vcpu_acquire_page(vcpu, memslot,
 			gfn, is_smm(vcpu), write);
 }
 
@@ -700,6 +737,33 @@ static int kvm_dsm_page_fault(struct kvm *kvm, struct kvm_memory_slot *memslot,
 
 #ifdef IVY_KVM_DSM
 	ret = ivy_kvm_dsm_page_fault(kvm, memslot, gfn, is_smm, write);
+#elif defined(TARDIS_KVM_DSM)
+	ret = tardis_kvm_dsm_page_fault(kvm, memslot, gfn, is_smm, write);
+#endif
+
+#ifdef KVM_DSM_PF_PROFILE
+	getnstimeofday(&ts);
+	kvm->stat.total_tx_latency += ts.tv_sec * 1000 * 1000 + ts.tv_nsec / 1000
+		- start;
+#endif
+	return ret;
+}
+
+static int kvm_dsm_vcpu_page_fault(struct kvm_vcpu *vcpu, struct kvm_memory_slot *memslot,
+		gfn_t gfn, bool is_smm, int write)
+{
+	int ret;
+	struct kvm *kvm = vcpu->kvm;
+#ifdef KVM_DSM_PF_PROFILE
+	struct timespec ts;
+	ulong start;
+
+	getnstimeofday(&ts);
+	start = ts.tv_sec * 1000 * 1000 + ts.tv_nsec / 1000;
+#endif
+
+#ifdef IVY_KVM_DSM
+	ret = ivy_kvm_dsm_vcpu_page_fault(vcpu, memslot, gfn, is_smm, write);
 #elif defined(TARDIS_KVM_DSM)
 	ret = tardis_kvm_dsm_page_fault(kvm, memslot, gfn, is_smm, write);
 #endif

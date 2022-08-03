@@ -649,7 +649,7 @@ static bool is_fast_path(struct kvm *kvm, struct kvm_dsm_memory_slot *slot,
  * 2. Upon a read fault, the version of requester is the same as resp.version
  */
 
-int ivy_kvm_dsm_async_pf_execute(struct kvm *kvm, gfn_t gfn, bool is_smm, struct kvm_memory_slot *memslot,
+int __ivy_kvm_dsm_page_fault_remote(struct kvm *kvm, gfn_t gfn, bool is_smm, struct kvm_memory_slot *memslot,
 		int write, struct kvm_dsm_memory_slot *slot, hfn_t vfn) {
     int ret = 0;
     char *page = NULL;
@@ -760,6 +760,11 @@ out:
     return ret;
 }
 
+int __ivy_kvm_dsm_vcpu_page_fault_remote(struct kvm_vcpu *vcpu, gfn_t gfn, bool is_smm, struct kvm_memory_slot *memslot,
+		int write, struct kvm_dsm_memory_slot *slot, hfn_t vfn) {
+    return __ivy_kvm_dsm_page_fault_remote(vcpu->kvm, gfn, is_smm, memslot, write, slot, vfn);
+}
+
 int ivy_kvm_dsm_page_fault(struct kvm *kvm, struct kvm_memory_slot *memslot,
         gfn_t gfn, bool is_smm, int write)
 {
@@ -795,7 +800,7 @@ int ivy_kvm_dsm_page_fault(struct kvm *kvm, struct kvm_memory_slot *memslot,
             dsm_add_to_copyset(slot, vfn, kvm->arch.dsm_id);
             ret = ACC_ALL;
         } else {
-            ret = ivy_kvm_dsm_async_pf_execute(kvm, gfn, is_smm, memslot, write, slot, vfn);
+            ret = __ivy_kvm_dsm_page_fault_remote(kvm, gfn, is_smm, memslot, write, slot, vfn);
             if (unlikely(ret < 0))
                 goto out_error;
         }
@@ -813,7 +818,7 @@ int ivy_kvm_dsm_page_fault(struct kvm *kvm, struct kvm_memory_slot *memslot,
             dsm_add_to_copyset(slot, vfn, kvm->arch.dsm_id);
             ret = ACC_EXEC_MASK | ACC_USER_MASK;
         } else {
-            ret = ivy_kvm_dsm_async_pf_execute(kvm, gfn, is_smm, memslot, write, slot, vfn);
+            ret = __ivy_kvm_dsm_page_fault_remote(kvm, gfn, is_smm, memslot, write, slot, vfn);
             if (unlikely(ret < 0))
                 goto out_error;
         }
@@ -828,3 +833,70 @@ out_error:
     return ret;
 }
 
+int ivy_kvm_dsm_vcpu_page_fault(struct kvm_vcpu *vcpu, struct kvm_memory_slot *memslot,
+		gfn_t gfn, bool is_smm, int write) {
+	int ret = 0;
+    struct kvm_dsm_memory_slot *slot;
+    hfn_t vfn;
+	struct kvm *kvm = vcpu->kvm;
+
+    vfn = __gfn_to_vfn_memslot(memslot, gfn);
+    slot = gfn_to_hvaslot(kvm, memslot, gfn);
+
+    if (is_fast_path(kvm, slot, vfn, write)) {
+        if (write) {
+            return ACC_ALL;
+        }
+        else {
+            return ACC_EXEC_MASK | ACC_USER_MASK;
+        }
+    }
+
+    BUG_ON(dsm_is_initial(slot, vfn) && dsm_get_prob_owner(slot, vfn) != 0);
+
+    /*
+     * If #PF is owner write fault, then issue invalidate by itself.
+     * Or this node will be owner after #PF, it still issue invalidate by
+     * receiving copyset from old owner.
+     */
+    if (write) {
+        /* Owner of all pages is 0 on init. */
+        if (!dsm_is_owner(slot, vfn)
+            && unlikely(dsm_is_initial(slot, vfn) && kvm->arch.dsm_id == 0)) {
+            dsm_set_prob_owner(slot, vfn, kvm->arch.dsm_id);
+            dsm_change_state(slot, vfn, DSM_OWNER | DSM_MODIFIED);
+            dsm_add_to_copyset(slot, vfn, kvm->arch.dsm_id);
+            ret = ACC_ALL;
+        } else {
+            ret = __ivy_kvm_dsm_vcpu_page_fault_remote(vcpu, gfn, is_smm, memslot, write, slot, vfn);
+            if (unlikely(ret < 0))
+                goto out_error;
+        }
+    } else {
+        /*
+         * If I'm the owner, then I would have already been in Shared or
+         * Modified state.
+         */
+        BUG_ON(dsm_is_owner(slot, vfn));
+
+        /* Owner of all pages is 0 on init. */
+        if (unlikely(dsm_is_initial(slot, vfn) && kvm->arch.dsm_id == 0)) {
+            dsm_set_prob_owner(slot, vfn, kvm->arch.dsm_id);
+            dsm_change_state(slot, vfn, DSM_OWNER | DSM_SHARED);
+            dsm_add_to_copyset(slot, vfn, kvm->arch.dsm_id);
+            ret = ACC_EXEC_MASK | ACC_USER_MASK;
+        } else {
+            ret = __ivy_kvm_dsm_vcpu_page_fault_remote(vcpu, gfn, is_smm, memslot, write, slot, vfn);
+            if (unlikely(ret < 0))
+                goto out_error;
+        }
+    }
+
+    return ret;
+
+out_error:
+    dump_stack();
+    printk(KERN_ERR "kvm-dsm: node-%d failed to handle page fault on gfn[%llu,%d], "
+            "error: %d\n", kvm->arch.dsm_id, gfn, is_smm, ret);
+    return ret;
+}
