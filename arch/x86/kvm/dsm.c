@@ -331,7 +331,7 @@ static int __kvm_dsm_vcpu_acquire_page_async(struct kvm_vcpu *vcpu,
 
 	dsm_lock(kvm, hvaslot, vfn);
 	dsm_access = kvm_dsm_vcpu_page_fault_async(vcpu, slot, gfn, is_smm, write);
-	if (dsm_access < 0) {
+	if (dsm_access < 0 || dsm_access == ACC_ASYNC) {
 		dsm_unlock(kvm, hvaslot, vfn);
 	}
 	return dsm_access;

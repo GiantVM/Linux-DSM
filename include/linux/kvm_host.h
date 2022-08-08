@@ -183,8 +183,14 @@ struct kvm_async_pf {
 	gva_t gva;
 	unsigned long addr;
 	struct kvm_arch_async_pf arch;
-	bool   wakeup_all;
+	bool wakeup_all;
 };
+
+void kvm_clear_async_pf_completion_queue(struct kvm_vcpu *vcpu);
+void kvm_check_async_pf_completion(struct kvm_vcpu *vcpu);
+int kvm_setup_async_pf(struct kvm_vcpu *vcpu, gva_t gva, unsigned long hva,
+		       struct kvm_arch_async_pf *arch);
+int kvm_async_pf_wakeup_all(struct kvm_vcpu *vcpu);
 
 #ifdef IVY_KVM_DSM
 struct ivy_kvm_dsm_async_pf {
@@ -192,23 +198,16 @@ struct ivy_kvm_dsm_async_pf {
 	struct list_head link;
 	struct list_head queue;
 	struct kvm_vcpu *vcpu;
-	gfn_t gfn;
-	bool is_smm;
+	gva_t gva;
 	struct kvm_memory_slot *memslot;
-	int write;
 	struct kvm_dsm_memory_slot *slot;
-	hfn_t vfn;
+	struct ivy_kvm_dsm_arch_async_pf arch;
+	bool wakeup_all;
 };
-int kvm_setup_ivy_dsm_async_pf(struct kvm_vcpu *vcpu, gfn_t gfn, bool is_smm,
-		struct kvm_memory_slot *memslot, int write,
-		struct kvm_dsm_memory_slot *slot, hfn_t vfn);
+int kvm_setup_ivy_dsm_async_pf(struct kvm_vcpu *vcpu, gva_t gva, struct kvm_memory_slot *memslot,
+		struct kvm_dsm_memory_slot *slot, struct ivy_kvm_dsm_arch_async_pf *arch);
 #endif
 
-void kvm_clear_async_pf_completion_queue(struct kvm_vcpu *vcpu);
-void kvm_check_async_pf_completion(struct kvm_vcpu *vcpu);
-int kvm_setup_async_pf(struct kvm_vcpu *vcpu, gva_t gva, unsigned long hva,
-		       struct kvm_arch_async_pf *arch);
-int kvm_async_pf_wakeup_all(struct kvm_vcpu *vcpu);
 #endif
 
 enum {

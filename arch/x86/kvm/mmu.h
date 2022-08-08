@@ -87,6 +87,10 @@ void kvm_init_shadow_mmu(struct kvm_vcpu *vcpu);
 void kvm_init_shadow_ept_mmu(struct kvm_vcpu *vcpu, bool execonly);
 bool kvm_can_do_async_pf(struct kvm_vcpu *vcpu);
 
+#ifdef IVY_KVM_DSM
+bool kvm_can_do_ivy_dsm_async_pf(struct kvm_vcpu *vcpu);
+#endif
+
 static inline unsigned int kvm_mmu_available_pages(struct kvm *kvm)
 {
 	if (kvm->arch.n_max_mmu_pages > kvm->arch.n_used_mmu_pages)

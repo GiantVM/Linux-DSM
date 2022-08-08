@@ -32,6 +32,8 @@ struct kvm_memslots;
 
 enum kvm_mr_change;
 
+struct ivy_kvm_dsm_async_pf;
+
 #include <asm/types.h>
 
 /*

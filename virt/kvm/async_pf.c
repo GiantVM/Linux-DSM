@@ -29,6 +29,8 @@
 #include "async_pf.h"
 #include <trace/events/kvm.h>
 
+#include "../../arch/x86/kvm/dsm.h"
+
 static inline void kvm_async_page_present_sync(struct kvm_vcpu *vcpu,
 					       struct kvm_async_pf *work)
 {
@@ -43,6 +45,23 @@ static inline void kvm_async_page_present_async(struct kvm_vcpu *vcpu,
 	kvm_arch_async_page_present(vcpu, work);
 #endif
 }
+
+#ifdef IVY_KVM_DSM
+static inline void kvm_ivy_dsm_async_page_present_sync(struct kvm_vcpu *vcpu,
+					       struct ivy_kvm_dsm_async_pf *work)
+{
+#ifdef CONFIG_KVM_ASYNC_PF_SYNC
+	kvm_arch_ivy_dsm_async_page_present(vcpu, work);
+#endif
+}
+static inline void kvm_ivy_dsm_async_page_present_async(struct kvm_vcpu *vcpu,
+						struct ivy_kvm_dsm_async_pf *work)
+{
+#ifndef CONFIG_KVM_ASYNC_PF_SYNC
+	kvm_arch_ivy_dsm_async_page_present(vcpu, work);
+#endif
+}
+#endif
 
 static struct kmem_cache *async_pf_cache;
 #ifdef IVY_KVM_DSM
@@ -139,10 +158,12 @@ static void ivy_dsm_async_pf_execute(struct work_struct *work) {
 	 * mm and might be done in another context, so we must
 	 * use local = false.
 	 */
-	__ivy_kvm_dsm_page_fault(vcpu->kvm, apf->gfn, apf->is_smm,
-		apf->memslot, apf->write, apf->slot, apf->vfn, false);
-
-	// kvm_async_page_present_sync(vcpu, apf);
+	dsm_lock(vcpu->kvm, apf->slot, apf->arch.vfn);
+	__ivy_kvm_dsm_page_fault_slow(vcpu->kvm, apf->arch.gfn, apf->arch.is_smm,
+		apf->memslot, apf->arch.write, apf->slot, apf->arch.vfn, false);
+	dsm_unlock(vcpu->kvm, apf->slot, apf->arch.vfn);
+	
+	kvm_ivy_dsm_async_page_present_sync(vcpu, apf);
 
 	spin_lock(&vcpu->async_pf.lock);
 	list_add_tail(&apf->link, &vcpu->async_pf.done);
@@ -166,6 +187,51 @@ static void ivy_dsm_async_pf_execute(struct work_struct *work) {
 }
 #endif
 
+/* Only for ivy dsm page fault */
+#ifdef IVY_KVM_DSM
+void kvm_clear_async_pf_completion_queue(struct kvm_vcpu *vcpu)
+{
+	spin_lock(&vcpu->async_pf.lock);
+
+	/* cancel outstanding work queue item */
+	while (!list_empty(&vcpu->async_pf.queue)) {
+		struct ivy_kvm_dsm_async_pf *work =
+			list_first_entry(&vcpu->async_pf.queue,
+					 typeof(*work), queue);
+		list_del(&work->queue);
+
+		/*
+		 * We know it's present in vcpu->async_pf.done, do
+		 * nothing here.
+		 */
+		if (!work->vcpu)
+			continue;
+
+		spin_unlock(&vcpu->async_pf.lock);
+#ifdef CONFIG_KVM_ASYNC_PF_SYNC
+		flush_work(&work->work);
+#else
+		if (cancel_work_sync(&work->work)) {
+			mmput(work->vcpu->kvm->mm);
+			kvm_put_kvm(vcpu->kvm); /* == work->vcpu->kvm */
+			kmem_cache_free(ivy_dsm_async_pf_cache, work);
+		}
+#endif
+		spin_lock(&vcpu->async_pf.lock);
+	}
+
+	while (!list_empty(&vcpu->async_pf.done)) {
+		struct ivy_kvm_dsm_async_pf *work =
+			list_first_entry(&vcpu->async_pf.done,
+					 typeof(*work), link);
+		list_del(&work->link);
+		kmem_cache_free(ivy_dsm_async_pf_cache, work);
+	}
+	spin_unlock(&vcpu->async_pf.lock);
+
+	vcpu->async_pf.queued = 0;
+}
+#else
 void kvm_clear_async_pf_completion_queue(struct kvm_vcpu *vcpu)
 {
 	spin_lock(&vcpu->async_pf.lock);
@@ -208,7 +274,30 @@ void kvm_clear_async_pf_completion_queue(struct kvm_vcpu *vcpu)
 
 	vcpu->async_pf.queued = 0;
 }
+#endif
 
+#ifdef IVY_KVM_DSM
+void kvm_check_async_pf_completion(struct kvm_vcpu *vcpu)
+{
+	struct ivy_kvm_dsm_async_pf *work;
+
+	while (!list_empty_careful(&vcpu->async_pf.done) &&
+	      kvm_arch_can_inject_ivy_dsm_async_page_present(vcpu)) {
+		spin_lock(&vcpu->async_pf.lock);
+		work = list_first_entry(&vcpu->async_pf.done, typeof(*work),
+					      link);
+		list_del(&work->link);
+		spin_unlock(&vcpu->async_pf.lock);
+
+		kvm_arch_ivy_dsm_async_page_ready(vcpu, work);
+		kvm_ivy_dsm_async_page_present_async(vcpu, work);
+
+		list_del(&work->queue);
+		vcpu->async_pf.queued--;
+		kmem_cache_free(ivy_dsm_async_pf_cache, work);
+	}
+}
+#else
 void kvm_check_async_pf_completion(struct kvm_vcpu *vcpu)
 {
 	struct kvm_async_pf *work;
@@ -229,6 +318,7 @@ void kvm_check_async_pf_completion(struct kvm_vcpu *vcpu)
 		kmem_cache_free(async_pf_cache, work);
 	}
 }
+#endif
 
 int kvm_setup_async_pf(struct kvm_vcpu *vcpu, gva_t gva, unsigned long hva,
 		       struct kvm_arch_async_pf *arch)
@@ -278,9 +368,8 @@ retry_sync:
 }
 
 #ifdef IVY_KVM_DSM
-int kvm_setup_ivy_dsm_async_pf(struct kvm_vcpu *vcpu, gfn_t gfn, bool is_smm,
-		struct kvm_memory_slot *memslot, int write,
-		struct kvm_dsm_memory_slot *slot, hfn_t vfn)
+int kvm_setup_ivy_dsm_async_pf(struct kvm_vcpu *vcpu, gva_t gva, struct kvm_memory_slot *memslot,
+		struct kvm_dsm_memory_slot *slot, struct ivy_kvm_dsm_arch_async_pf *arch)
 {
 	struct ivy_kvm_dsm_async_pf *work;
 
@@ -298,12 +387,11 @@ int kvm_setup_ivy_dsm_async_pf(struct kvm_vcpu *vcpu, gfn_t gfn, bool is_smm,
 		return 0;
 
 	work->vcpu = vcpu;
-	work->gfn = gfn;
-	work->is_smm = is_smm;
 	work->memslot = memslot;
-	work->write = write;
+	work->gva = gva;
 	work->slot = slot;
-	work->vfn = vfn;
+	work->arch = *arch;
+	work->wakeup_all = false;
 	atomic_inc(&work->vcpu->kvm->mm->mm_users);
 	kvm_get_kvm(work->vcpu->kvm);
 
@@ -313,7 +401,7 @@ int kvm_setup_ivy_dsm_async_pf(struct kvm_vcpu *vcpu, gfn_t gfn, bool is_smm,
 
 	list_add_tail(&work->queue, &vcpu->async_pf.queue);
 	vcpu->async_pf.queued++;
-	// kvm_arch_async_page_not_present(vcpu, work);
+	kvm_arch_ivy_dsm_async_page_not_present(vcpu, work);
 	return 1;
 retry_sync:
 	kvm_put_kvm(work->vcpu->kvm);
@@ -323,6 +411,29 @@ retry_sync:
 }
 #endif
 
+#ifdef IVY_KVM_DSM
+int kvm_async_pf_wakeup_all(struct kvm_vcpu *vcpu)
+{
+	struct ivy_kvm_dsm_async_pf *work;
+
+	if (!list_empty_careful(&vcpu->async_pf.done))
+		return 0;
+
+	work = kmem_cache_zalloc(ivy_dsm_async_pf_cache, GFP_ATOMIC);
+	if (!work)
+		return -ENOMEM;
+
+	work->wakeup_all = true;
+	INIT_LIST_HEAD(&work->queue); /* for list_del to work */
+
+	spin_lock(&vcpu->async_pf.lock);
+	list_add_tail(&work->link, &vcpu->async_pf.done);
+	spin_unlock(&vcpu->async_pf.lock);
+
+	vcpu->async_pf.queued++;
+	return 0;
+}
+#else
 int kvm_async_pf_wakeup_all(struct kvm_vcpu *vcpu)
 {
 	struct kvm_async_pf *work;
@@ -344,3 +455,4 @@ int kvm_async_pf_wakeup_all(struct kvm_vcpu *vcpu)
 	vcpu->async_pf.queued++;
 	return 0;
 }
+#endif

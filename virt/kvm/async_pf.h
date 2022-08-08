@@ -28,12 +28,6 @@ int kvm_async_pf_init(void);
 void kvm_async_pf_deinit(void);
 void kvm_async_pf_vcpu_init(struct kvm_vcpu *vcpu);
 
-#ifdef IVY_KVM_DSM
-int kvm_setup_ivy_dsm_async_pf(struct kvm_vcpu *vcpu, gfn_t gfn, bool is_smm,
-		struct kvm_memory_slot *memslot, int write,
-		struct kvm_dsm_memory_slot *slot, hfn_t vfn);
-#endif
-
 #else
 #define kvm_async_pf_init() (0)
 #define kvm_async_pf_deinit() do {} while (0)

@@ -114,7 +114,7 @@ module_param_named(pml, enable_pml, bool, S_IRUGO);
 
 /* Guest_tsc -> host_tsc conversion requires 64-bit division.  */
 static int __read_mostly cpu_preemption_timer_multi;
-static bool __read_mostly enable_preemption_timer = 1;
+static bool __read_mostly enable_preemption_timer = 0;
 #ifdef CONFIG_X86_64
 module_param_named(preemption_timer, enable_preemption_timer, bool, S_IRUGO);
 #endif

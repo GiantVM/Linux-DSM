@@ -3599,10 +3599,43 @@ static int kvm_arch_setup_async_pf(struct kvm_vcpu *vcpu, gva_t gva, gfn_t gfn)
 	return kvm_setup_async_pf(vcpu, gva, kvm_vcpu_gfn_to_hva(vcpu, gfn), &arch);
 }
 
+#ifdef IVY_KVM_DSM
+int kvm_arch_setup_ivy_dsm_async_pf(struct kvm_vcpu *vcpu, gfn_t gfn, bool is_smm,
+		struct kvm_memory_slot *memslot, int write,
+		struct kvm_dsm_memory_slot *slot, hfn_t vfn) {
+	struct ivy_kvm_dsm_arch_async_pf arch;
+
+	arch.gfn = gfn;
+	arch.is_smm = is_smm;
+	arch.write = write;
+	arch.vfn = vfn;
+	arch.token = (vcpu->arch.apf.id++ << 12) | vcpu->vcpu_id;
+	arch.direct_map = vcpu->arch.mmu.direct_map;
+	arch.cr3 = vcpu->arch.mmu.get_cr3(vcpu);
+
+	return kvm_setup_ivy_dsm_async_pf(vcpu, kvm_vcpu_gfn_to_hva(vcpu, gfn), memslot, slot, &arch);
+}
+#endif
+
 bool kvm_can_do_async_pf(struct kvm_vcpu *vcpu)
+{/*
+	// if (unlikely(!lapic_in_kernel(vcpu) ||
+	// 	     kvm_event_needs_reinjection(vcpu)))
+	if (unlikely(kvm_event_needs_reinjection(vcpu)))
+		return false;
+
+	if (is_guest_mode(vcpu))
+		return false;
+
+	return kvm_x86_ops->interrupt_allowed(vcpu);*/
+	return false;
+}
+
+bool kvm_can_do_ivy_dsm_async_pf(struct kvm_vcpu *vcpu)
 {
-	if (unlikely(!lapic_in_kernel(vcpu) ||
-		     kvm_event_needs_reinjection(vcpu)))
+	// if (unlikely(!lapic_in_kernel(vcpu) ||
+	// 	     kvm_event_needs_reinjection(vcpu)))
+	if (unlikely(kvm_event_needs_reinjection(vcpu)))
 		return false;
 
 	if (is_guest_mode(vcpu))
@@ -3636,6 +3669,21 @@ static bool try_async_pf(struct kvm_vcpu *vcpu, bool prefault, gfn_t gfn,
 	*pfn = __gfn_to_pfn_memslot(slot, gfn, false, NULL, write, writable);
 	return false;
 }
+
+#ifdef IVY_KVM_DSM
+static int try_ivy_dsm_async_pf(struct kvm_vcpu *vcpu, bool prefault,
+		struct kvm_memory_slot **slot, gfn_t gfn, bool write) {
+	if (!prefault && kvm_can_do_ivy_dsm_async_pf(vcpu)) {
+		if (kvm_find_async_pf_gfn(vcpu, gfn)) {
+			kvm_make_request(KVM_REQ_APF_HALT, vcpu);
+			return ACC_ASYNC;
+		} else 
+			return kvm_dsm_vcpu_acquire_page_async(vcpu, slot, gfn, write);
+	}
+
+	return kvm_dsm_vcpu_acquire_page(vcpu, slot, gfn, write);
+}
+#endif
 
 static bool
 check_hugepage_cache_consistency(struct kvm_vcpu *vcpu, gfn_t gfn, int level)
@@ -3888,15 +3936,16 @@ static int tdp_page_fault(struct kvm_vcpu *vcpu, gva_t gpa, u32 error_code,
 			vcpu->kvm->arch.dsm_id, vcpu->vcpu_id, gpa, error_code,
 			write ? "W" : (error_code & PFERR_FETCH_MASK ? "RI" : "R"),
 			gfn, is_smm(vcpu), map_writable);
-#endif
-
-	dsm_access = kvm_dsm_vcpu_acquire_page(vcpu, &slot, gfn, write);
+#ifdef IVY_KVM_DSM
+	dsm_access = try_ivy_dsm_async_pf(vcpu, prefault, &slot, gfn, write);
 	if (dsm_access < 0) {
 		kvm_release_pfn_clean(pfn);
 		return dsm_access;
 	} else if (dsm_access == ACC_ASYNC) {
 		return 0;
 	}
+#endif
+#endif
 
 	spin_lock(&vcpu->kvm->mmu_lock);
 	if (mmu_notifier_retry(vcpu->kvm, mmu_seq))

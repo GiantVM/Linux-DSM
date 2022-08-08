@@ -622,6 +622,7 @@ struct kvm_vcpu_arch {
 	unsigned long last_retry_eip;
 	unsigned long last_retry_addr;
 
+	/* Disable try_async_pf, only used for ivy_dsm_pf */
 	struct {
 		bool halted;
 		gfn_t gfns[roundup_pow_of_two(ASYNC_PF_PER_VCPU)];
@@ -1188,6 +1189,18 @@ struct kvm_arch_async_pf {
 	bool direct_map;
 };
 
+#ifdef IVY_KVM_DSM
+struct ivy_kvm_dsm_arch_async_pf {
+	gfn_t gfn;
+	bool is_smm;
+	int write;
+	hfn_t vfn;
+	u32 token;
+	unsigned long cr3;
+	bool direct_map;
+};
+#endif
+
 extern struct kvm_x86_ops *kvm_x86_ops;
 
 int kvm_mmu_module_init(void);
@@ -1516,6 +1529,17 @@ void kvm_arch_async_page_ready(struct kvm_vcpu *vcpu,
 			       struct kvm_async_pf *work);
 bool kvm_arch_can_inject_async_page_present(struct kvm_vcpu *vcpu);
 extern bool kvm_find_async_pf_gfn(struct kvm_vcpu *vcpu, gfn_t gfn);
+
+
+#ifdef IVY_KVM_DSM
+void kvm_arch_ivy_dsm_async_page_not_present(struct kvm_vcpu *vcpu,
+				     struct ivy_kvm_dsm_async_pf *work);
+void kvm_arch_ivy_dsm_async_page_ready(struct kvm_vcpu *vcpu,
+			       struct ivy_kvm_dsm_async_pf *work);
+void kvm_arch_ivy_dsm_async_page_present(struct kvm_vcpu *vcpu,
+				 struct ivy_kvm_dsm_async_pf *work);
+bool kvm_arch_can_inject_ivy_dsm_async_page_present(struct kvm_vcpu *vcpu);
+#endif
 
 void kvm_complete_insn_gp(struct kvm_vcpu *vcpu, int err);
 
