@@ -714,8 +714,10 @@ int __ivy_kvm_dsm_page_fault_slow(struct kvm *kvm, gfn_t gfn, bool is_smm,
         if (!dsm_is_owner(slot, vfn) && resp_len > 0) {
 			if (local)
 				ret = __kvm_write_guest_page(memslot, gfn, page, 0, PAGE_SIZE);
-			else
+			else {
+				printk(KERN_ERR "remote write %llu.\n", gfn);
 				ret = kvm_write_guest_page_nonlocal(kvm, memslot, gfn, page, 0, PAGE_SIZE);
+			}
             if (unlikely(ret < 0)) {
                 goto out;
             }
@@ -747,10 +749,13 @@ int __ivy_kvm_dsm_page_fault_slow(struct kvm *kvm, gfn_t gfn, bool is_smm,
 
 		if (local)
         	ret = __kvm_write_guest_page(memslot, gfn, page, 0, PAGE_SIZE);
-		else
+		else {
+			printk(KERN_ERR "remote read %llu.\n", gfn);
 			ret = kvm_write_guest_page_nonlocal(kvm, memslot, gfn, page, 0, PAGE_SIZE);
-        if (unlikely(ret < 0))
+		}
+        if (unlikely(ret < 0)) {
             goto out;
+		}
 
         dsm_set_prob_owner(slot, vfn, kvm->arch.dsm_id);
         /*
@@ -899,6 +904,9 @@ int ivy_kvm_dsm_vcpu_page_fault_async(struct kvm_vcpu *vcpu, struct kvm_memory_s
             ret = ACC_ASYNC;
         }
     }
+		if (gfn % 111 == 0||ret == ACC_ASYNC)
+		printk(KERN_ERR "vcpu %d HEREccccc gfn %llu ret = %d.\n", vcpu->vcpu_id, gfn, ret);
+
 
     return ret;
 /*

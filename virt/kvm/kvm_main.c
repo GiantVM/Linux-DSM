@@ -2185,6 +2185,7 @@ void kvm_vcpu_block(struct kvm_vcpu *vcpu)
 
 	for (;;) {
 		prepare_to_swait(&vcpu->wq, &wait, TASK_INTERRUPTIBLE);
+		printk(KERN_ERR "vcpu %d going to sleep.\n", vcpu->vcpu_id);
 
 		if (kvm_vcpu_check_block(vcpu) < 0)
 			break;

@@ -3635,6 +3635,10 @@ bool kvm_can_do_ivy_dsm_async_pf(struct kvm_vcpu *vcpu)
 {
 	// if (unlikely(!lapic_in_kernel(vcpu) ||
 	// 	     kvm_event_needs_reinjection(vcpu)))
+	if (!(vcpu->arch.apf.msr_val & KVM_ASYNC_PF_ENABLED) ||
+	    (vcpu->arch.apf.send_user_only &&
+	     kvm_x86_ops->get_cpl(vcpu) == 0))
+		return false;
 	if (unlikely(kvm_event_needs_reinjection(vcpu)))
 		return false;
 
@@ -3676,6 +3680,7 @@ static int try_ivy_dsm_async_pf(struct kvm_vcpu *vcpu, bool prefault,
 	if (!prefault && kvm_can_do_ivy_dsm_async_pf(vcpu)) {
 		if (kvm_find_async_pf_gfn(vcpu, gfn)) {
 			kvm_make_request(KVM_REQ_APF_HALT, vcpu);
+			printk(KERN_ERR "making halt request.\n");
 			return ACC_ASYNC;
 		} else 
 			return kvm_dsm_vcpu_acquire_page_async(vcpu, slot, gfn, write);
@@ -3942,6 +3947,7 @@ static int tdp_page_fault(struct kvm_vcpu *vcpu, gva_t gpa, u32 error_code,
 		kvm_release_pfn_clean(pfn);
 		return dsm_access;
 	} else if (dsm_access == ACC_ASYNC) {
+		dsm_debug("setup non-present done.\n");
 		return 0;
 	}
 #endif

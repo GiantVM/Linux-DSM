@@ -124,6 +124,8 @@ void kvm_async_pf_task_wait(u32 token)
 	struct kvm_task_sleep_head *b = &async_pf_sleepers[key];
 	struct kvm_task_sleep_node n, *e;
 	DECLARE_SWAITQUEUE(wait);
+	struct task_struct *task;
+	struct mm_struct *mm;
 
 	rcu_irq_enter();
 
@@ -147,6 +149,20 @@ void kvm_async_pf_task_wait(u32 token)
 	hlist_add_head(&n.link, &b->list);
 	raw_spin_unlock(&b->lock);
 
+	printk(KERN_ERR "pf task waiting tasks:.\n");
+	for_each_process(task)
+    {
+		if (!task)
+			continue;
+        mm = get_task_mm(task);
+		if (mm)
+        	printk(KERN_ERR "%d \t %d\t %s \t %lu \n",
+                task->pid, task_ppid_nr(task), task->comm, mm->total_vm);
+		else
+			printk(KERN_ERR "%d \t %d\t %s \n",
+                task->pid, task_ppid_nr(task), task->comm);
+    }
+
 	for (;;) {
 		if (!n.halted)
 			prepare_to_swait(&n.wq, &wait, TASK_UNINTERRUPTIBLE);
@@ -157,6 +173,20 @@ void kvm_async_pf_task_wait(u32 token)
 
 		if (!n.halted) {
 			local_irq_enable();
+				printk(KERN_ERR "pf task waiting tasks:.\n");
+				for_each_process(task)
+				{
+					if (!task)
+						continue;
+					mm = get_task_mm(task);
+					if (mm)
+						printk(KERN_ERR "%d \t %d\t %s \t %lu \n",
+							task->pid, task_ppid_nr(task), task->comm, mm->total_vm);
+					else
+						printk(KERN_ERR "%d \t %d\t %s \n",
+							task->pid, task_ppid_nr(task), task->comm);
+				}
+			printk(KERN_ERR "I am process [%s].\n", current->comm);
 			schedule();
 			local_irq_disable();
 		} else {
@@ -325,11 +355,7 @@ static void kvm_guest_apic_eoi_write(u32 reg, u32 val)
 	apic_write(APIC_EOI, APIC_EOI_ACK);
 }
 
-static void kvm_guest_cpu_init(void)
-{
-	if (!kvm_para_available())
-		return;
-
+static void kvm_pv_enable_apf(void) {
 	if (kvm_para_has_feature(KVM_FEATURE_ASYNC_PF) && kvmapf) {
 		u64 pa = slow_virt_to_phys(this_cpu_ptr(&apf_reason));
 
@@ -338,9 +364,17 @@ static void kvm_guest_cpu_init(void)
 #endif
 		wrmsrl(MSR_KVM_ASYNC_PF_EN, pa | KVM_ASYNC_PF_ENABLED);
 		__this_cpu_write(apf_reason.enabled, 1);
-		printk(KERN_INFO"KVM setup async PF for cpu %d\n",
-		       smp_processor_id());
+		printk(KERN_INFO"KVM setup async PF for cpu %d, total_cpus = %u\n",
+		       smp_processor_id(), num_online_cpus());
 	}
+}
+
+static void kvm_guest_cpu_init(void)
+{
+	if (!kvm_para_available())
+		return;
+
+	kvm_pv_enable_apf();
 
 	if (kvm_para_has_feature(KVM_FEATURE_PV_EOI)) {
 		unsigned long pa;

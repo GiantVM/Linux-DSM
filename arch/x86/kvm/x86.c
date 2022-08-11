@@ -2084,6 +2084,7 @@ static int kvm_pv_enable_async_pf(struct kvm_vcpu *vcpu, u64 data)
 	if (!(data & KVM_ASYNC_PF_ENABLED)) {
 		kvm_clear_async_pf_completion_queue(vcpu);
 		kvm_async_pf_hash_reset(vcpu);
+		printk(KERN_ERR "vcpu %d Enabled2.\n", vcpu->vcpu_id);
 		return 0;
 	}
 
@@ -2093,6 +2094,7 @@ static int kvm_pv_enable_async_pf(struct kvm_vcpu *vcpu, u64 data)
 
 	vcpu->arch.apf.send_user_only = !(data & KVM_ASYNC_PF_SEND_ALWAYS);
 	kvm_async_pf_wakeup_all(vcpu);
+	printk(KERN_ERR "vcpu %d Enabled.\n", vcpu->vcpu_id);
 	return 0;
 }
 
@@ -8540,6 +8542,7 @@ static int apf_put_user(struct kvm_vcpu *vcpu, u32 val)
 			sizeof(val), true);
 	if (ret < 0)
 		return ret;
+	printk(KERN_ERR "writing vcpu %d, val = %u.\n", vcpu->vcpu_id, val);
 	ret = kvm_write_guest_cached(vcpu->kvm, &vcpu->arch.apf.data, &val,
 				      sizeof(val));
 	kvm_dsm_vcpu_release(vcpu, slots, vcpu->arch.apf.data.gpa, sizeof(val));
@@ -8607,10 +8610,16 @@ void kvm_arch_ivy_dsm_async_page_not_present(struct kvm_vcpu *vcpu,
 
 	kvm_add_async_pf_gfn(vcpu, work->arch.gfn);
 
+	dsm_debug("here222222 gfn %llu .\n",work->arch.gfn );
+
 	if (!(vcpu->arch.apf.msr_val & KVM_ASYNC_PF_ENABLED) ||
 	    (vcpu->arch.apf.send_user_only &&
-	     kvm_x86_ops->get_cpl(vcpu) == 0))
+	     kvm_x86_ops->get_cpl(vcpu) == 0)) {
 		kvm_make_request(KVM_REQ_APF_HALT, vcpu);
+		dsm_debug("cannot write non-present, vcpu->arch.apf.send_user_only = %d"
+			" kvm_x86_ops->get_cpl(vcpu) = %d, vcpu->arch.apf.msr_val & KVM_ASYNC_PF_ENABLED = %llu.\n", vcpu->arch.apf.send_user_only ? 1 : 0,
+			 kvm_x86_ops->get_cpl(vcpu), vcpu->arch.apf.msr_val & KVM_ASYNC_PF_ENABLED);
+		 }
 	else if (!apf_put_user(vcpu, KVM_PV_REASON_PAGE_NOT_PRESENT)) {
 		fault.vector = PF_VECTOR;
 		fault.error_code_valid = true;
@@ -8618,6 +8627,7 @@ void kvm_arch_ivy_dsm_async_page_not_present(struct kvm_vcpu *vcpu,
 		fault.nested_page_fault = false;
 		fault.address = work->arch.token;
 		kvm_inject_page_fault(vcpu, &fault);
+		dsm_debug("HERE111ddddd");
 	}
 }
 
@@ -8638,6 +8648,7 @@ void kvm_arch_ivy_dsm_async_page_present(struct kvm_vcpu *vcpu,
 		fault.nested_page_fault = false;
 		fault.address = work->arch.token;
 		kvm_inject_page_fault(vcpu, &fault);
+			dsm_debug("vcpu %d herelllll gfn %llu .\n", vcpu->vcpu_id, work->arch.gfn);
 	}
 	vcpu->arch.apf.halted = false;
 	vcpu->arch.mp_state = KVM_MP_STATE_RUNNABLE;

@@ -51,6 +51,7 @@ static inline void kvm_ivy_dsm_async_page_present_sync(struct kvm_vcpu *vcpu,
 					       struct ivy_kvm_dsm_async_pf *work)
 {
 #ifdef CONFIG_KVM_ASYNC_PF_SYNC
+	printk(KERN_ERR "sync manner.\n");
 	kvm_arch_ivy_dsm_async_page_present(vcpu, work);
 #endif
 }
@@ -58,6 +59,7 @@ static inline void kvm_ivy_dsm_async_page_present_async(struct kvm_vcpu *vcpu,
 						struct ivy_kvm_dsm_async_pf *work)
 {
 #ifndef CONFIG_KVM_ASYNC_PF_SYNC
+	printk(KERN_ERR "async manner.\n");
 	kvm_arch_ivy_dsm_async_page_present(vcpu, work);
 #endif
 }
@@ -162,6 +164,8 @@ static void ivy_dsm_async_pf_execute(struct work_struct *work) {
 	__ivy_kvm_dsm_page_fault_slow(vcpu->kvm, apf->arch.gfn, apf->arch.is_smm,
 		apf->memslot, apf->arch.write, apf->slot, apf->arch.vfn, false);
 	dsm_unlock(vcpu->kvm, apf->slot, apf->arch.vfn);
+	dsm_debug("after doing slow.\n");
+
 	
 	kvm_ivy_dsm_async_page_present_sync(vcpu, apf);
 
